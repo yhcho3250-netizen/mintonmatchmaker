@@ -1,0 +1,149 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: 'Plus Jakarta Sans', 'Noto Sans KR', system-ui, -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+}
+
+html,
+body {
+  font-family: var(--font-sans);
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: auto;
+  touch-action: pan-x pan-y;
+}
+
+button,
+[role="button"],
+a,
+label,
+input,
+select,
+textarea {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Custom scrollbars for court boards */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: rgba(15, 23, 42, 0.6);
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(51, 65, 85, 0.8);
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(16, 185, 129, 0.6);
+}
+
+/* 파트너 하트손잡기(HeartHandshake) 반짝반짝 애니메이션 */
+@keyframes partnerTwinkle {
+  0%, 100% {
+    opacity: 0.5;
+    transform: scale(0.92);
+    filter: drop-shadow(0 0 2px currentColor);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.18);
+    filter: drop-shadow(0 0 8px currentColor);
+  }
+}
+
+.animate-partner-twinkle {
+  animation: partnerTwinkle 2s ease-in-out infinite;
+}
+
+/* 퇴장자(마지막판 완료) 카드 은은한 회색 발광(Glow) 효과 */
+@keyframes subtleGrayGlow {
+  0%, 100% {
+    box-shadow: 0 0 8px rgba(148, 163, 184, 0.25), inset 0 0 4px rgba(148, 163, 184, 0.1);
+    border-color: rgba(148, 163, 184, 0.45);
+  }
+  50% {
+    box-shadow: 0 0 16px rgba(203, 213, 225, 0.5), inset 0 0 8px rgba(203, 213, 225, 0.2);
+    border-color: rgba(226, 232, 240, 0.75);
+  }
+}
+
+.animate-subtle-gray-glow {
+  animation: subtleGrayGlow 2.4s ease-in-out infinite;
+}
+
+/* Hide scrollbar utility */
+.no-scrollbar::-webkit-scrollbar {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+}
+.no-scrollbar {
+  -ms-overflow-style: none !important;
+  scrollbar-width: none !important;
+}
+
+/* 코트 현황 4명 선수 카드 중앙 동그라미 완료 버튼을 가리지 않도록 안쪽 모서리를 타원 모양으로 찌그린 스타일 */
+.court-player-corner-tl {
+  border-radius: 0.75rem 0.75rem 48px 0.75rem / 0.75rem 0.75rem 34px 0.75rem;
+}
+
+.court-player-corner-tr {
+  border-radius: 0.75rem 0.75rem 0.75rem 48px / 0.75rem 0.75rem 0.75rem 34px;
+}
+
+.court-player-corner-bl {
+  border-radius: 0.75rem 48px 0.75rem 0.75rem / 0.75rem 34px 0.75rem 0.75rem;
+}
+
+.court-player-corner-br {
+  border-radius: 48px 0.75rem 0.75rem 0.75rem / 34px 0.75rem 0.75rem 0.75rem;
+}
+
+@media (min-width: 640px) {
+  .court-player-corner-tl {
+    border-radius: 0.75rem 0.75rem 54px 0.75rem / 0.75rem 0.75rem 38px 0.75rem;
+  }
+  .court-player-corner-tr {
+    border-radius: 0.75rem 0.75rem 0.75rem 54px / 0.75rem 0.75rem 0.75rem 38px;
+  }
+  .court-player-corner-bl {
+    border-radius: 0.75rem 54px 0.75rem 0.75rem / 0.75rem 38px 0.75rem 0.75rem;
+  }
+  .court-player-corner-br {
+    border-radius: 54px 0.75rem 0.75rem 0.75rem / 38px 0.75rem 0.75rem 0.75rem;
+  }
+}
+
+/* 참가자 0명일 때 [참가자 명단] 메뉴 버튼의 문구와 아이콘(이미지)만 발광(Glow)하는 효과 (박스 테두리/배경 발광 제외) */
+@keyframes emptyPlayersIconGlow {
+  0%, 100% {
+    color: #34d399;
+    filter: drop-shadow(0 0 5px rgba(52, 211, 153, 0.75)) drop-shadow(0 0 10px rgba(16, 185, 129, 0.5));
+  }
+  50% {
+    color: #ecfdf5;
+    filter: drop-shadow(0 0 10px rgba(52, 211, 153, 1)) drop-shadow(0 0 20px rgba(16, 185, 129, 0.95));
+  }
+}
+
+@keyframes emptyPlayersTextGlow {
+  0%, 100% {
+    color: #34d399;
+    text-shadow: 0 0 6px rgba(52, 211, 153, 0.75), 0 0 12px rgba(16, 185, 129, 0.5);
+  }
+  50% {
+    color: #ecfdf5;
+    text-shadow: 0 0 10px rgba(52, 211, 153, 1), 0 0 20px rgba(16, 185, 129, 0.95);
+  }
+}
+
+.animate-empty-players-icon {
+  animation: emptyPlayersIconGlow 1.15s ease-in-out infinite !important;
+}
+
+.animate-empty-players-text {
+  animation: emptyPlayersTextGlow 1.15s ease-in-out infinite !important;
+}

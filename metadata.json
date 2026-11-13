@@ -1,0 +1,6 @@
+{
+  "name": "민턴 매치메이커 - 배드민턴 자동 복식 관리 시스템",
+  "description": "배드민턴 모임 전용 자동 복식 대진표 생성 및 실시간 경기 진행 관리 시스템",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
