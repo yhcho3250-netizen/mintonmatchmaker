@@ -124,6 +124,7 @@ export function hasFirstFourStartedAssignment(
     }
   });
   queuedMatches.forEach((m) => {
+    if (m.isSpecialMatch) return;
     if (m.teamA?.player1Id) assignedOrPlayingIds.add(m.teamA.player1Id);
     if (m.teamA?.player2Id) assignedOrPlayingIds.add(m.teamA.player2Id);
     if (m.teamB?.player1Id) assignedOrPlayingIds.add(m.teamB.player1Id);
@@ -212,7 +213,9 @@ export function getFirstFourAssignmentStartTime(
   activeMatches.forEach((m) => {
     if (m.status !== 'completed') collectMatchTime(m);
   });
-  queuedMatches.forEach((m) => collectMatchTime(m));
+  queuedMatches.forEach((m) => {
+    if (!m.isSpecialMatch) collectMatchTime(m);
+  });
 
   if (matchTimes.length > 0) {
     return Math.max(firstFourMaxRegTime, Math.min(...matchTimes));
@@ -663,10 +666,11 @@ export function recalculateRelativeLateOffsets(
     const inCourt = activeCourtIds.has(p.id) ? 1 : 0;
     const inQueue = queuedMatches.filter(
       (m) =>
-        m.teamA?.player1Id === p.id ||
-        m.teamA?.player2Id === p.id ||
-        m.teamB?.player1Id === p.id ||
-        m.teamB?.player2Id === p.id
+        !m.isSpecialMatch &&
+        (m.teamA?.player1Id === p.id ||
+          m.teamA?.player2Id === p.id ||
+          m.teamB?.player1Id === p.id ||
+          m.teamB?.player2Id === p.id)
     ).length;
     rawAssignedMap[p.id] = (p.gamesPlayed || 0) + inCourt + inQueue;
   });
@@ -732,10 +736,11 @@ export function computeRestReturnOffset(
     const inCourt = activeCourtIds.has(p.id) ? 1 : 0;
     const inQueue = queuedMatches.filter(
       (m) =>
-        m.teamA?.player1Id === p.id ||
-        m.teamA?.player2Id === p.id ||
-        m.teamB?.player1Id === p.id ||
-        m.teamB?.player2Id === p.id
+        !m.isSpecialMatch &&
+        (m.teamA?.player1Id === p.id ||
+          m.teamA?.player2Id === p.id ||
+          m.teamB?.player1Id === p.id ||
+          m.teamB?.player2Id === p.id)
     ).length;
     return (p.gamesPlayed || 0) + inCourt + inQueue;
   };
@@ -818,6 +823,7 @@ export function reconcileManualPlayerIntervention(
 
   const queuedCountMap: Record<string, number> = {};
   nextQueuedMatches.forEach((m) => {
+    if (m.isSpecialMatch) return;
     [m.teamA?.player1Id, m.teamA?.player2Id, m.teamB?.player1Id, m.teamB?.player2Id].forEach(
       (id) => {
         if (id) queuedCountMap[id] = (queuedCountMap[id] || 0) + 1;
@@ -1896,15 +1902,20 @@ export function findFairSameTierSameGender(
     if (restedCount < requiredRested) continue;
 
     let excess = 0;
-    const excessLimit = (sameTierUsageCounts[tier] || 0) === 0 ? 1.2 : 0.15;
+    let maxSingleExcess = 0;
+    const excessLimit = (sameTierUsageCounts[tier] || 0) === 0 ? 0.35 : 0.15;
     for (let idx = 0; idx < 4; idx++) {
       const pEff = localEffMap[four[idx].id] ?? 0;
       const baseEff = tier === 'S' ? (baseSlotEffs[idx] ?? 0) : (baseSlotEffsNonS[idx] ?? 0);
-      if (pEff - baseEff > 0.15) {
-        excess += pEff - baseEff;
+      const diff = pEff - baseEff;
+      if (diff > 0.15) {
+        excess += diff;
+      }
+      if (diff > maxSingleExcess) {
+        maxSingleExcess = diff;
       }
     }
-    if (excess > excessLimit) continue;
+    if (excess > excessLimit || maxSingleExcess > 0.35) continue;
 
     const latePenalty = getLatePlayerEqualizationPenalty(
       four,
@@ -2039,8 +2050,14 @@ export function findFairSameTierMixedGender(
     const excessM1 = (localEffMap[mPair[1].id] ?? 0) - refM1;
     const excessF0 = (localEffMap[fPair[0].id] ?? 0) - refF0;
     const excessF1 = (localEffMap[fPair[1].id] ?? 0) - refF1;
-    const excessThreshold = (sameTierUsageCounts[tier] || 0) === 0 ? 1.2 : 0.15;
-    if (excessM0 > excessThreshold || excessM1 > excessThreshold || excessF0 > excessThreshold || excessF1 > excessThreshold) continue;
+    const excessThreshold = (sameTierUsageCounts[tier] || 0) === 0 ? 0.35 : 0.15;
+    if (
+      excessM0 > excessThreshold ||
+      excessM1 > excessThreshold ||
+      excessF0 > excessThreshold ||
+      excessF1 > excessThreshold
+    )
+      continue;
 
     const latePenalty = getLatePlayerEqualizationPenalty(
       four,
@@ -3332,9 +3349,10 @@ export function generateDoublesMatches(
   restingPlayerIds: string[];
   updatedPlayers: Player[];
 } {
+  const normalExistingQueue = existingQueuedMatches.filter((m) => !m.isSpecialMatch);
   const playersWithHistory = mergeQueuedPartnerHistory(
     allPlayers,
-    existingQueuedMatches,
+    normalExistingQueue,
     activeMatches
   );
   const activeCourtIds = new Set<string>();
@@ -3346,17 +3364,34 @@ export function generateDoublesMatches(
       if (m.teamB?.player2Id) activeCourtIds.add(m.teamB.player2Id);
     }
   });
-  const activePlayers = playersWithHistory.filter((p) =>
+  const rawActivePlayers = playersWithHistory.filter((p) =>
     isPlayerEligibleForMatchmaking(p, activeCourtIds, existingQueuedMatches)
   );
 
-  if (activePlayers.length < 4) {
+  if (rawActivePlayers.length < 4) {
     throw new Error('최소 4명의 참가자가 활성화되어 있어야 복식 경기를 생성할 수 있습니다. (휴식중/레슨중/마지막판완료 제외)');
   }
 
+  const specialHoldIds = getSpecialMatchHoldPlayerIds(
+    allPlayers,
+    activeCourtIds,
+    existingQueuedMatches
+  );
+  const nonHoldPlayers = rawActivePlayers.filter((p) => !specialHoldIds.has(p.id));
+  const nonHoldMales = nonHoldPlayers.filter((p) => p.gender === 'M');
+  const nonHoldFemales = nonHoldPlayers.filter((p) => p.gender === 'F');
+  const canFormWithoutHold =
+    nonHoldPlayers.length >= 4 &&
+    (nonHoldMales.length >= 4 ||
+      nonHoldFemales.length >= 4 ||
+      (options.mode !== 'doubles_only' && nonHoldMales.length >= 2 && nonHoldFemales.length >= 2) ||
+      (options.mode === 'random' && nonHoldMales.length >= 1 && nonHoldFemales.length >= 1));
+
+  const activePlayers = canFormWithoutHold ? nonHoldPlayers : rawActivePlayers;
+
   // Sort candidates by selection priority:
-  // 1. If avoidConsecutiveRests is on, players with higher consecutiveRestRounds get higher priority
-  // 2. Players with fewer games played get priority
+  // 1. Players with fewer effective games played get priority
+  // 2. If avoidConsecutiveRests is on, players with higher consecutiveRestRounds get higher priority within the same assignment tier
   // 3. Random shuffle for ties
   const effectiveMap = computeEffectiveAssignedMap(activePlayers);
   const randomizedCandidates = shuffleArray(activePlayers);
@@ -3368,9 +3403,7 @@ export function generateDoublesMatches(
     const aEff = a.tier === 'S' ? aAssigned * 0.65 : aAssigned;
     const bEff = b.tier === 'S' ? bAssigned * 0.65 : bAssigned;
 
-    const aIsLate = isLateRegisteredPlayer(a, activePlayers);
-    const bIsLate = isLateRegisteredPlayer(b, activePlayers);
-    if ((aIsLate || bIsLate) && Math.abs(aEff - bEff) >= 0.5) {
+    if (Math.abs(aEff - bEff) >= 0.35) {
       return aEff - bEff;
     }
 
@@ -3544,7 +3577,7 @@ export function mergeQueuedPartnerHistory(
   };
 
   const nonCompletedActive = (activeMatches || []).filter((m) => m && m.status !== 'completed');
-  const queueList = existingQueuedMatches || [];
+  const queueList = (existingQueuedMatches || []).filter((m) => !m.isSpecialMatch);
   const allPriorMatches = [...nonCompletedActive, ...queueList];
 
   allPriorMatches.forEach((m) => {
@@ -3712,6 +3745,9 @@ export function generateNextQueuedMatches(
   queuedMatches: CourtMatch[];
   assignedPlayerIds: string[];
 } {
+  const normalExistingQueue = existingQueuedMatches.filter((m) => !m.isSpecialMatch);
+  const specialExistingQueue = existingQueuedMatches.filter((m) => Boolean(m.isSpecialMatch));
+
   const rawActivePlayers = allPlayers.filter((p) =>
     isPlayerEligibleForMatchmaking(p, activeCourtPlayerIds, existingQueuedMatches)
   );
@@ -3721,7 +3757,7 @@ export function generateNextQueuedMatches(
   }
 
   if (
-    existingQueuedMatches.length === 0 &&
+    normalExistingQueue.length === 0 &&
     activeMatches.length === 0 &&
     activeCourtPlayerIds.size === 0 &&
     rawActivePlayers.every((p) => (p.gamesPlayed || 0) === 0)
@@ -3729,20 +3765,20 @@ export function generateNextQueuedMatches(
     resetSameTierUsageTracker();
   }
 
-  // Clone active players and merge partner history and simulated rest rounds from existingQueuedMatches and activeMatches
+  // Clone active players and merge partner history and simulated rest rounds from normalExistingQueue and activeMatches
   const activePlayers = mergeQueuedPartnerHistory(
     rawActivePlayers,
-    existingQueuedMatches,
+    normalExistingQueue,
     activeMatches,
     options.courtCount
   );
 
   // Track each player's total current assigned count:
-  // gamesPlayed + active court (if playing) + queue count
+  // gamesPlayed + active court (if playing) + normal queue count
   const playerAssignedCount: Record<string, number> = {};
   activePlayers.forEach((p) => {
     const activeCourtCount = activeCourtPlayerIds.has(p.id) ? 1 : 0;
-    const inQueueCount = existingQueuedMatches.filter(
+    const inQueueCount = normalExistingQueue.filter(
       (m) =>
         m.teamA.player1Id === p.id ||
         m.teamA.player2Id === p.id ||
@@ -3756,16 +3792,16 @@ export function generateNextQueuedMatches(
   const assignedPlayerIdsSet = new Set<string>();
 
   // 15게임당 3~4.5게임(약 25%) 혼복 배정 비율 유지를 위한 세션 경기 수 카운트
-  let sessionTotalCount = options.totalSessionMatches ?? existingQueuedMatches.length;
+  let sessionTotalCount = options.totalSessionMatches ?? normalExistingQueue.length;
   let sessionMixedCount =
     options.mixedSessionMatches ??
-    existingQueuedMatches.filter((m) => m.title?.includes('혼복')).length;
+    normalExistingQueue.filter((m) => m.title?.includes('혼복')).length;
 
   const effectiveCourtCount = Math.max(1, options.courtCount || 1);
 
   for (let matchIdx = 0; matchIdx < matchCountToGenerate; matchIdx++) {
-    // 현재 대기열 전체 (기존 대기열 + 이번 연속 생성 중 추가된 대기열)
-    const allCurrentQueue = [...existingQueuedMatches, ...queuedMatches];
+    // 현재 일반 대기열 전체 (기존 일반 대기열 + 이번 연속 생성 중 추가된 대기열)
+    const allCurrentQueue = [...normalExistingQueue, ...queuedMatches];
 
     // 현재 코트 개수(effectiveCourtCount)에 비례한 동시 코트 회전 묶음(Wave) 및 최근 (코트수 - 1)개 경기 내 선수 파악:
     // 코트가 C개일 때 연속된 C개의 대기열 경기는 동시에 C개 코트에 투입되므로 동일 선수가 중복 배정되지 않도록 함
@@ -3816,71 +3852,101 @@ export function generateNextQueuedMatches(
       allPlayers
     );
 
+    const specialHoldIds = getSpecialMatchHoldPlayerIds(
+      allPlayers,
+      activeCourtPlayerIds,
+      [...allCurrentQueue, ...specialExistingQueue],
+      playerAssignedCount
+    );
+
+    const eligibleForMatch = activePlayers.filter(
+      (p) => !(p.specialStatus === 'last_match' && assignedPlayerIdsSet.has(p.id))
+    );
+    const nonHoldCandidates = eligibleForMatch.filter((p) => !specialHoldIds.has(p.id));
+    const nonHoldMales = nonHoldCandidates.filter((p) => p.gender === 'M');
+    const nonHoldFemales = nonHoldCandidates.filter((p) => p.gender === 'F');
+    const canFormWithoutHold =
+      nonHoldCandidates.length >= 4 &&
+      (nonHoldMales.length >= 4 ||
+        nonHoldFemales.length >= 4 ||
+        (options.mode !== 'doubles_only' &&
+          nonHoldMales.length >= 2 &&
+          nonHoldFemales.length >= 2) ||
+        (options.mode === 'random' && nonHoldMales.length >= 1 && nonHoldFemales.length >= 1));
+
+    if (!canFormWithoutHold) {
+      specialHoldIds.forEach((holdId) => {
+        if (effectiveAssignedCount[holdId] !== undefined) {
+          effectiveAssignedCount[holdId] += 0.85;
+        }
+      });
+    }
+
+    const baseCandidatePool = canFormWithoutHold ? nonHoldCandidates : eligibleForMatch;
+
     // Sort candidates for this match:
     // 1. Players not already assigned in the current C-court wave get highest priority
     // 2. Late-registered players never get consecutive games or equalize game counts with early arrivals
-    // 3. Resting players (not on active courts) get preference for the immediate court wave
-    // 4. Players with fewer total effective assigned matches & higher consecutive rests get preference
-    const sortedAllCandidates = activePlayers
-      .filter((p) => !(p.specialStatus === 'last_match' && assignedPlayerIdsSet.has(p.id)))
-      .sort((a, b) => {
-        const aInWave = currentCourtWavePlayerIds.has(a.id) ? 1 : 0;
-        const bInWave = currentCourtWavePlayerIds.has(b.id) ? 1 : 0;
-        if (aInWave !== bInWave) {
-          return aInWave - bInWave;
-        }
+    // 3. Players with fewer total effective assigned matches get priority
+    // 4. Within the same effective assignment band, resting players get preference
+    const sortedAllCandidates = [...baseCandidatePool].sort((a, b) => {
+      const aInWave = currentCourtWavePlayerIds.has(a.id) ? 1 : 0;
+      const bInWave = currentCourtWavePlayerIds.has(b.id) ? 1 : 0;
+      if (aInWave !== bInWave) {
+        return aInWave - bInWave;
+      }
 
-        // 늦게 등록된 선수가 직전 경기에 이미 배정된 경우 연속 게임 배정 원천 차단
-        const aIsLate = isLateRegisteredPlayer(a, allPlayers);
-        const bIsLate = isLateRegisteredPlayer(b, allPlayers);
-        const aLateConsecutive = aIsLate && lastMatchPlayerIds.has(a.id) ? 1 : 0;
-        const bLateConsecutive = bIsLate && lastMatchPlayerIds.has(b.id) ? 1 : 0;
-        if (aLateConsecutive !== bLateConsecutive) {
-          return aLateConsecutive - bLateConsecutive;
-        }
+      // 늦게 등록된 선수가 직전 경기에 이미 배정된 경우 연속 게임 배정 원천 차단
+      const aIsLate = isLateRegisteredPlayer(a, allPlayers);
+      const bIsLate = isLateRegisteredPlayer(b, allPlayers);
+      const aLateConsecutive = aIsLate && lastMatchPlayerIds.has(a.id) ? 1 : 0;
+      const bLateConsecutive = bIsLate && lastMatchPlayerIds.has(b.id) ? 1 : 0;
+      if (aLateConsecutive !== bLateConsecutive) {
+        return aLateConsecutive - bLateConsecutive;
+      }
 
-        const aEff = effectiveAssignedCount[a.id] ?? (playerAssignedCount[a.id] || 0);
-        const bEff = effectiveAssignedCount[b.id] ?? (playerAssignedCount[b.id] || 0);
+      const aEff = effectiveAssignedCount[a.id] ?? (playerAssignedCount[a.id] || 0);
+      const bEff = effectiveAssignedCount[b.id] ?? (playerAssignedCount[b.id] || 0);
 
-        // 코트 수 비례 첫 코트 회전 묶음(Wave)에서는 현재 코트에서 뛰고 있지 않은 대기/휴식자를 우선 배정
-        if (allCurrentQueue.length < effectiveCourtCount) {
-          const aPlaying = activeCourtPlayerIds.has(a.id) ? 1 : 0;
-          const bPlaying = activeCourtPlayerIds.has(b.id) ? 1 : 0;
-          if (aPlaying !== bPlaying) {
-            return aPlaying - bPlaying;
-          }
+      // 코트 수 비례 첫 코트 회전 묶음(Wave)에서는 현재 코트에서 뛰고 있지 않은 대기/휴식자를 우선 배정
+      if (allCurrentQueue.length < effectiveCourtCount) {
+        const aPlaying = activeCourtPlayerIds.has(a.id) ? 1 : 0;
+        const bPlaying = activeCourtPlayerIds.has(b.id) ? 1 : 0;
+        if (aPlaying !== bPlaying) {
+          return aPlaying - bPlaying;
         }
+      }
 
-        // 늦게 온 선수와 일찍 온 선수 간 실효 배정 수가 다를 때는 휴식 라운드보다 실효 배정 수를 우선 적용하여 동률 추격 방지
-        if ((aIsLate || bIsLate) && Math.abs(aEff - bEff) >= 0.5) {
-          return aEff - bEff;
-        }
+      // 실효 배정 수에 차이가 있을 때는 배정 수가 적은 선수를 최우선 선발하여 특정 선수가 누락되거나 앞지르는 현상 방지
+      if (Math.abs(aEff - bEff) >= 0.35) {
+        return aEff - bEff;
+      }
 
-        // 직전 경기 휴식자 우선 출전 (연속 대기 방지) 활성화 시:
-        if (options.avoidConsecutiveRests) {
-          const aRested = (a.consecutiveRestRounds || 0) > 0 ? 1 : 0;
-          const bRested = (b.consecutiveRestRounds || 0) > 0 ? 1 : 0;
-          if (bRested !== aRested) {
-            return bRested - aRested;
-          }
-          if ((b.consecutiveRestRounds || 0) !== (a.consecutiveRestRounds || 0)) {
-            return (b.consecutiveRestRounds || 0) - (a.consecutiveRestRounds || 0);
-          }
+      // 직전 경기 휴식자 우선 출전 (연속 대기 방지) 활성화 시 (동일 배정 단계 내에서 우선):
+      if (options.avoidConsecutiveRests) {
+        const aRested = (a.consecutiveRestRounds || 0) > 0 ? 1 : 0;
+        const bRested = (b.consecutiveRestRounds || 0) > 0 ? 1 : 0;
+        if (bRested !== aRested) {
+          return bRested - aRested;
         }
+        if ((b.consecutiveRestRounds || 0) !== (a.consecutiveRestRounds || 0)) {
+          return (b.consecutiveRestRounds || 0) - (a.consecutiveRestRounds || 0);
+        }
+      }
 
-        if (aEff !== bEff) {
-          return aEff - bEff;
-        }
-        if (a.tier === 'S' && b.tier !== 'S') return -1;
-        if (b.tier === 'S' && a.tier !== 'S') return 1;
-        const regDiff = getPlayerRegistrationTime(a) - getPlayerRegistrationTime(b);
-        if (Math.abs(regDiff) >= 60000) return regDiff;
-        if (!options.avoidConsecutiveRests || options.mode === 'random') {
-          return Math.random() - 0.5;
-        }
-        if (regDiff !== 0) return regDiff;
+      if (aEff !== bEff) {
+        return aEff - bEff;
+      }
+      if (a.tier === 'S' && b.tier !== 'S') return -1;
+      if (b.tier === 'S' && a.tier !== 'S') return 1;
+      const regDiff = getPlayerRegistrationTime(a) - getPlayerRegistrationTime(b);
+      if (Math.abs(regDiff) >= 60000) return regDiff;
+      if (!options.avoidConsecutiveRests || options.mode === 'random') {
         return Math.random() - 0.5;
-      });
+      }
+      if (regDiff !== 0) return regDiff;
+      return Math.random() - 0.5;
+    });
 
     // 동일 코트 회전 묶음(C개 코트) 내 중복 배정을 방지하기 위해 가능한 경우 비중복 후보군을 우선 사용
     const nonWaveCandidates = sortedAllCandidates.filter(
@@ -3944,7 +4010,8 @@ export function generateNextQueuedMatches(
     const preferSameTierNow =
       options.mode !== 'random' && shouldPreferSameTierMatch(lowestAvailableSameTier);
 
-    const assignmentWeight = 15000;
+    const assignmentWeight = 350000;
+    const maxAssignedWeight = 200000;
 
     // 모드별 보너스 산출 (실력 밸런스/완전 랜덤 모드에서는 15게임당 3~4.5게임 약 25% 비율 적용)
     let wdBaseBonus = 35000;
@@ -4030,6 +4097,9 @@ export function generateNextQueuedMatches(
           (s, p) => s + (effectiveAssignedCount[p.id] ?? (playerAssignedCount[p.id] || 0)),
           0
         ) / 4;
+      const maxAssigned = Math.max(
+        ...wdChosen.map((p) => effectiveAssignedCount[p.id] ?? (playerAssignedCount[p.id] || 0))
+      );
       const restBonus = options.avoidConsecutiveRests
         ? wdChosen.filter((p) => (p.consecutiveRestRounds || 0) > 0).length * 40000 +
           wdChosen.reduce((s, p) => s + (p.consecutiveRestRounds || 0), 0) * 15000
@@ -4045,7 +4115,7 @@ export function generateNextQueuedMatches(
         sameTierTypeBonus = sameTierWD.usageCount <= minSameUsage ? 150000 : 40000;
       } else if (options.mode !== 'random' && !isSameTierFour(wdChosen)) {
         const breakPen = wdChosen.reduce(
-          (sum, p) => sum + getUnplayedSameTierBreakPenalty(p, allPlayers, playerAssignedCount),
+          (sum, p) => sum + getUnplayedSameTierBreakPenalty(p, baseCandidatePool, playerAssignedCount),
           0
         );
         sameTierTypeBonus -= breakPen;
@@ -4067,7 +4137,8 @@ export function generateNextQueuedMatches(
         type: 'WD',
         preEval: wdEval,
         score:
-          -avgAssigned * assignmentWeight +
+          -avgAssigned * assignmentWeight -
+          maxAssigned * maxAssignedWeight +
           wdBaseBonus +
           restBonus +
           tierBonus +
@@ -4113,6 +4184,9 @@ export function generateNextQueuedMatches(
           (s, p) => s + (effectiveAssignedCount[p.id] ?? (playerAssignedCount[p.id] || 0)),
           0
         ) / 4;
+      const maxAssigned = Math.max(
+        ...mdChosen.map((p) => effectiveAssignedCount[p.id] ?? (playerAssignedCount[p.id] || 0))
+      );
       const restBonus = options.avoidConsecutiveRests
         ? mdChosen.filter((p) => (p.consecutiveRestRounds || 0) > 0).length * 40000 +
           mdChosen.reduce((s, p) => s + (p.consecutiveRestRounds || 0), 0) * 15000
@@ -4128,7 +4202,7 @@ export function generateNextQueuedMatches(
         sameTierTypeBonus = sameTierMD.usageCount <= minSameUsage ? 150000 : 40000;
       } else if (options.mode !== 'random' && !isSameTierFour(mdChosen)) {
         const breakPen = mdChosen.reduce(
-          (sum, p) => sum + getUnplayedSameTierBreakPenalty(p, allPlayers, playerAssignedCount),
+          (sum, p) => sum + getUnplayedSameTierBreakPenalty(p, baseCandidatePool, playerAssignedCount),
           0
         );
         sameTierTypeBonus -= breakPen;
@@ -4150,7 +4224,8 @@ export function generateNextQueuedMatches(
         type: 'MD',
         preEval: mdEval,
         score:
-          -avgAssigned * assignmentWeight +
+          -avgAssigned * assignmentWeight -
+          maxAssigned * maxAssignedWeight +
           mdBaseBonus +
           restBonus +
           tierBonus +
@@ -4202,6 +4277,9 @@ export function generateNextQueuedMatches(
           (s, p) => s + (effectiveAssignedCount[p.id] ?? (playerAssignedCount[p.id] || 0)),
           0
         ) / 4;
+      const maxAssigned = Math.max(
+        ...xdChosen.map((p) => effectiveAssignedCount[p.id] ?? (playerAssignedCount[p.id] || 0))
+      );
       const restBonus = options.avoidConsecutiveRests
         ? xdChosen.filter((p) => (p.consecutiveRestRounds || 0) > 0).length * 40000 +
           xdChosen.reduce((s, p) => s + (p.consecutiveRestRounds || 0), 0) * 15000
@@ -4211,7 +4289,7 @@ export function generateNextQueuedMatches(
         sameTierTypeBonus = sameTierXD.usageCount <= minSameUsage ? 160000 : 45000;
       } else if (options.mode !== 'random' && !isSameTierFour(xdChosen)) {
         const breakPen = xdChosen.reduce(
-          (sum, p) => sum + getUnplayedSameTierBreakPenalty(p, allPlayers, playerAssignedCount),
+          (sum, p) => sum + getUnplayedSameTierBreakPenalty(p, baseCandidatePool, playerAssignedCount),
           0
         );
         sameTierTypeBonus -= breakPen;
@@ -4235,7 +4313,8 @@ export function generateNextQueuedMatches(
         type: 'XD',
         preEval: xdEval,
         score:
-          -avgAssigned * assignmentWeight +
+          -avgAssigned * assignmentWeight -
+          maxAssigned * maxAssignedWeight +
           xdBonus +
           restBonus +
           tierBonus +
@@ -4416,9 +4495,9 @@ export function generateNextQueuedMatches(
     });
 
     // Update in-memory consecutiveRestRounds when a full court wave completes in the queue
-    const totalQueueNow = existingQueuedMatches.length + queuedMatches.length;
+    const totalQueueNow = normalExistingQueue.length + queuedMatches.length;
     if (totalQueueNow % effectiveCourtCount === 0) {
-      const completedWave = [...existingQueuedMatches, ...queuedMatches].slice(-effectiveCourtCount);
+      const completedWave = [...normalExistingQueue, ...queuedMatches].slice(-effectiveCourtCount);
       const wavePlayerIds = new Set<string>();
       completedWave.forEach((m) => {
         wavePlayerIds.add(m.teamA.player1Id);
@@ -4474,19 +4553,21 @@ export function generateSingleCourtMatch(
   match: CourtMatch;
   assignedPlayerIds: string[];
 } {
-  const activePlayers = allPlayers.filter(
+  const normalExistingQueue = existingQueuedMatches.filter((m) => !m.isSpecialMatch);
+
+  const rawActivePlayers = allPlayers.filter(
     (p) =>
       !alreadyPlayingPlayerIds.has(p.id) &&
       isPlayerEligibleForMatchmaking(p, alreadyPlayingPlayerIds, existingQueuedMatches)
   );
 
-  if (activePlayers.length < 4) {
+  if (rawActivePlayers.length < 4) {
     throw new Error('현재 코트에 배정 가능한 대기 선수가 4명 미만입니다. (휴식중/레슨중/마지막판완료 제외)');
   }
 
-  // Calculate each player's queued occurrence count and merge queued/active partner history
+  // Calculate each player's normal queued occurrence count and merge queued/active partner history
   const playerQueuedCount: Record<string, number> = {};
-  existingQueuedMatches.forEach((m) => {
+  normalExistingQueue.forEach((m) => {
     const pA1 = m.teamA?.player1Id;
     const pA2 = m.teamA?.player2Id;
     const pB1 = m.teamB?.player1Id;
@@ -4497,9 +4578,27 @@ export function generateSingleCourtMatch(
     });
   });
 
+  const specialHoldIds = getSpecialMatchHoldPlayerIds(
+    allPlayers,
+    alreadyPlayingPlayerIds,
+    existingQueuedMatches
+  );
+
+  const nonHoldPlayers = rawActivePlayers.filter((p) => !specialHoldIds.has(p.id));
+  const nonHoldMales = nonHoldPlayers.filter((p) => p.gender === 'M');
+  const nonHoldFemales = nonHoldPlayers.filter((p) => p.gender === 'F');
+  const canFormWithoutSpecialHold =
+    nonHoldPlayers.length >= 4 &&
+    (nonHoldMales.length >= 4 ||
+      nonHoldFemales.length >= 4 ||
+      (options.mode !== 'doubles_only' && nonHoldMales.length >= 2 && nonHoldFemales.length >= 2) ||
+      (options.mode === 'random' && nonHoldMales.length >= 1 && nonHoldFemales.length >= 1));
+
+  const activePlayers = canFormWithoutSpecialHold ? nonHoldPlayers : rawActivePlayers;
+
   const candidatesWithHistory = mergeQueuedPartnerHistory(
     activePlayers,
-    existingQueuedMatches,
+    normalExistingQueue,
     activeMatches,
     options.courtCount
   );
@@ -4511,7 +4610,7 @@ export function generateSingleCourtMatch(
 
   const effectiveCourtCount = Math.max(1, options.courtCount || 1);
   const recentPlayedOrQueuedIds = new Set<string>([...alreadyPlayingPlayerIds]);
-  existingQueuedMatches.slice(-effectiveCourtCount).forEach((m) => {
+  normalExistingQueue.slice(-effectiveCourtCount).forEach((m) => {
     recentPlayedOrQueuedIds.add(m.teamA.player1Id);
     recentPlayedOrQueuedIds.add(m.teamA.player2Id);
     recentPlayedOrQueuedIds.add(m.teamB.player1Id);
@@ -4533,9 +4632,17 @@ export function generateSingleCourtMatch(
     allPlayers
   );
 
+  if (!canFormWithoutSpecialHold) {
+    specialHoldIds.forEach((holdId) => {
+      if (effectiveAssignedMap[holdId] !== undefined) {
+        effectiveAssignedMap[holdId] += 0.85;
+      }
+    });
+  }
+
   // Prioritize resting players fairly:
   // 1. Lowest effective assignment count (gamesPlayed + in queue + latecomer/rest offset)
-  // 2. Highest consecutive rest rounds (unless comparing early vs latecomer/rested with different effective counts)
+  // 2. Highest consecutive rest rounds within the same assignment band
   // 3. Lowest gamesPlayed & earlier registration timestamp
   const sortedCandidates = [...candidatesWithHistory].sort((a, b) => {
     const aIsLate = isLateRegisteredPlayer(a, allPlayers);
@@ -4552,11 +4659,11 @@ export function generateSingleCourtMatch(
     const aEffAssigned = a.tier === 'S' ? aTotalAssigned * 0.65 : aTotalAssigned;
     const bEffAssigned = b.tier === 'S' ? bTotalAssigned * 0.65 : bTotalAssigned;
 
-    if ((aIsLate || bIsLate) && Math.abs(aEffAssigned - bEffAssigned) >= 0.5) {
+    if (Math.abs(aEffAssigned - bEffAssigned) >= 0.35) {
       return aEffAssigned - bEffAssigned;
     }
 
-    // 직전 경기 휴식자 우선 출전 (연속 대기 방지) 활성화 시:
+    // 직전 경기 휴식자 우선 출전 (연속 대기 방지) 활성화 시 (동일 배정 단계 내 우선):
     if (options.avoidConsecutiveRests) {
       // 1. 직전 경기 휴식자(consecutiveRestRounds > 0)를 방금 경기를 마친 선수(consecutiveRestRounds === 0)보다 최우선 선발
       const aRested = (a.consecutiveRestRounds || 0) > 0 ? 1 : 0;
@@ -4872,6 +4979,7 @@ export function generateSingleCourtMatch(
 
     const avgEffAssigned =
       fourPlayers.reduce((sum, p) => sum + getEff(p), 0) / Math.max(1, fourPlayers.length);
+    const maxEffAssigned = Math.max(...fourPlayers.map((p) => getEff(p)));
 
     const totalRests = fourPlayers.reduce((sum, p) => sum + p.consecutiveRestRounds, 0);
     const lateEqualPenalty = getLatePlayerEqualizationPenalty(
@@ -4886,7 +4994,8 @@ export function generateSingleCourtMatch(
 
     // 공정성 점수 반영: 적게 뛴 선수 및 오래 쉰 선수 우선 배정
     score -= excessAssigned * 80000;
-    score -= avgEffAssigned * 15000;
+    score -= avgEffAssigned * 350000;
+    score -= maxEffAssigned * 200000;
     // 늦게 등록되었거나 휴식 후 복귀한 선수가 일찍 온 선수와 동일한 게임 수가 되거나 연속 경기에 배정되는 경우 강력 페널티 부여
     score -= lateEqualPenalty;
     if (options.avoidConsecutiveRests) {
@@ -6026,19 +6135,21 @@ export function generateSpecificTypeQueuedMatch(
   },
   activeMatches: CourtMatch[] = []
 ): CourtMatch {
-  // Merge existingQueuedMatches and activeMatches partner history and simulated rest rounds into cloned player objects
+  const normalExistingQueue = existingQueuedMatches.filter((m) => !m.isSpecialMatch);
+
+  // Merge normalExistingQueue and activeMatches partner history and simulated rest rounds into cloned player objects
   const playersWithHistory = mergeQueuedPartnerHistory(
     allPlayers,
-    existingQueuedMatches,
+    normalExistingQueue,
     activeMatches,
     options.courtCount
   );
 
-  // Compute total assignments per player (gamesPlayed + active + in queue)
+  // Compute total assignments per player (gamesPlayed + active + in normal queue)
   const playerAssignedCount: Record<string, number> = {};
   playersWithHistory.forEach((p) => {
     const activeCourtCount = activeCourtPlayerIds.has(p.id) ? 1 : 0;
-    const inQueueCount = existingQueuedMatches.filter(
+    const inQueueCount = normalExistingQueue.filter(
       (m) =>
         m.teamA.player1Id === p.id ||
         m.teamA.player2Id === p.id ||
@@ -6050,10 +6161,10 @@ export function generateSpecificTypeQueuedMatch(
 
   const effectiveCourtCount = Math.max(1, options.courtCount || 1);
   const waveStartIdx =
-    Math.floor(existingQueuedMatches.length / effectiveCourtCount) * effectiveCourtCount;
-  const currentWaveMatches = existingQueuedMatches.slice(waveStartIdx);
+    Math.floor(normalExistingQueue.length / effectiveCourtCount) * effectiveCourtCount;
+  const currentWaveMatches = normalExistingQueue.slice(waveStartIdx);
   const recentWindowMatches =
-    effectiveCourtCount > 1 ? existingQueuedMatches.slice(-(effectiveCourtCount - 1)) : [];
+    effectiveCourtCount > 1 ? normalExistingQueue.slice(-(effectiveCourtCount - 1)) : [];
 
   const currentCourtWavePlayerIds = new Set<string>();
   [...currentWaveMatches, ...recentWindowMatches].forEach((m) => {
@@ -6064,13 +6175,13 @@ export function generateSpecificTypeQueuedMatch(
   });
 
   const lastMatchIds = new Set<string>();
-  existingQueuedMatches.slice(-effectiveCourtCount).forEach((m) => {
+  normalExistingQueue.slice(-effectiveCourtCount).forEach((m) => {
     lastMatchIds.add(m.teamA.player1Id);
     lastMatchIds.add(m.teamA.player2Id);
     lastMatchIds.add(m.teamB.player1Id);
     lastMatchIds.add(m.teamB.player2Id);
   });
-  if (existingQueuedMatches.length === 0) {
+  if (normalExistingQueue.length === 0) {
     playersWithHistory.forEach((p) => {
       if (
         activeCourtPlayerIds.has(p.id) ||
@@ -6089,60 +6200,91 @@ export function generateSpecificTypeQueuedMatch(
     allPlayers
   );
 
-  const sortedAllCandidates = playersWithHistory
-    .filter((p) => isPlayerEligibleForMatchmaking(p, activeCourtPlayerIds, existingQueuedMatches))
-    .sort((a, b) => {
-      const aInWave = currentCourtWavePlayerIds.has(a.id) ? 1 : 0;
-      const bInWave = currentCourtWavePlayerIds.has(b.id) ? 1 : 0;
-      if (aInWave !== bInWave) return aInWave - bInWave;
+  const specialHoldIds = getSpecialMatchHoldPlayerIds(
+    allPlayers,
+    activeCourtPlayerIds,
+    existingQueuedMatches,
+    playerAssignedCount
+  );
 
-      const aIsLate = isLateRegisteredPlayer(a, allPlayers);
-      const bIsLate = isLateRegisteredPlayer(b, allPlayers);
-      const aLateConsecutive = aIsLate && lastMatchIds.has(a.id) ? 1 : 0;
-      const bLateConsecutive = bIsLate && lastMatchIds.has(b.id) ? 1 : 0;
-      if (aLateConsecutive !== bLateConsecutive) {
-        return aLateConsecutive - bLateConsecutive;
+  const rawEligibleCandidates = playersWithHistory.filter((p) =>
+    isPlayerEligibleForMatchmaking(p, activeCourtPlayerIds, existingQueuedMatches)
+  );
+  const nonHoldCandidates = rawEligibleCandidates.filter((p) => !specialHoldIds.has(p.id));
+  const nonHoldMales = nonHoldCandidates.filter((p) => p.gender === 'M');
+  const nonHoldFemales = nonHoldCandidates.filter((p) => p.gender === 'F');
+  const canFormTypeWithoutHold =
+    (matchType === 'MD' && nonHoldMales.length >= 4) ||
+    (matchType === 'WD' && nonHoldFemales.length >= 4) ||
+    (matchType === 'XD' &&
+      ((nonHoldMales.length >= 2 && nonHoldFemales.length >= 2) ||
+        (options.mode === 'random' &&
+          nonHoldCandidates.length >= 4 &&
+          nonHoldMales.length >= 1 &&
+          nonHoldFemales.length >= 1)));
+
+  if (!canFormTypeWithoutHold) {
+    specialHoldIds.forEach((holdId) => {
+      if (effectiveAssignedCount[holdId] !== undefined) {
+        effectiveAssignedCount[holdId] += 0.85;
       }
-
-      if (existingQueuedMatches.length < effectiveCourtCount) {
-        const aPlaying = activeCourtPlayerIds.has(a.id) ? 1 : 0;
-        const bPlaying = activeCourtPlayerIds.has(b.id) ? 1 : 0;
-        if (aPlaying !== bPlaying) return aPlaying - bPlaying;
-      }
-
-      const aAssigned = effectiveAssignedCount[a.id] ?? (playerAssignedCount[a.id] || 0);
-      const bAssigned = effectiveAssignedCount[b.id] ?? (playerAssignedCount[b.id] || 0);
-      // S조는 다른 조(A,B,C,D,E조)보다 더 많은 비율의 배정/진행을 받을 수 있도록 가중치(0.65배) 적용
-      const aEffAssigned = a.tier === 'S' ? aAssigned * 0.65 : aAssigned;
-      const bEffAssigned = b.tier === 'S' ? bAssigned * 0.65 : bAssigned;
-
-      if ((aIsLate || bIsLate) && Math.abs(aEffAssigned - bEffAssigned) >= 0.5) {
-        return aEffAssigned - bEffAssigned;
-      }
-
-      if (options.avoidConsecutiveRests) {
-        const aRested = (a.consecutiveRestRounds || 0) > 0 ? 1 : 0;
-        const bRested = (b.consecutiveRestRounds || 0) > 0 ? 1 : 0;
-        if (bRested !== aRested) return bRested - aRested;
-        if ((b.consecutiveRestRounds || 0) !== (a.consecutiveRestRounds || 0)) {
-          return (b.consecutiveRestRounds || 0) - (a.consecutiveRestRounds || 0);
-        }
-      }
-
-      if (aEffAssigned !== bEffAssigned) return aEffAssigned - bEffAssigned;
-      const aGames = a.tier === 'S' ? a.gamesPlayed * 0.65 : a.gamesPlayed;
-      const bGames = b.tier === 'S' ? b.gamesPlayed * 0.65 : b.gamesPlayed;
-      if (aGames !== bGames) return aGames - bGames;
-      if (a.tier === 'S' && b.tier !== 'S') return -1;
-      if (b.tier === 'S' && a.tier !== 'S') return 1;
-      const regDiff = getPlayerRegistrationTime(a) - getPlayerRegistrationTime(b);
-      if (Math.abs(regDiff) >= 60000) return regDiff;
-      if (!options.avoidConsecutiveRests || options.mode === 'random') {
-        return Math.random() - 0.5;
-      }
-      if (regDiff !== 0) return regDiff;
-      return Math.random() - 0.5;
     });
+  }
+
+  const candidatePool = canFormTypeWithoutHold ? nonHoldCandidates : rawEligibleCandidates;
+
+  const sortedAllCandidates = [...candidatePool].sort((a, b) => {
+    const aInWave = currentCourtWavePlayerIds.has(a.id) ? 1 : 0;
+    const bInWave = currentCourtWavePlayerIds.has(b.id) ? 1 : 0;
+    if (aInWave !== bInWave) return aInWave - bInWave;
+
+    const aIsLate = isLateRegisteredPlayer(a, allPlayers);
+    const bIsLate = isLateRegisteredPlayer(b, allPlayers);
+    const aLateConsecutive = aIsLate && lastMatchIds.has(a.id) ? 1 : 0;
+    const bLateConsecutive = bIsLate && lastMatchIds.has(b.id) ? 1 : 0;
+    if (aLateConsecutive !== bLateConsecutive) {
+      return aLateConsecutive - bLateConsecutive;
+    }
+
+    if (normalExistingQueue.length < effectiveCourtCount) {
+      const aPlaying = activeCourtPlayerIds.has(a.id) ? 1 : 0;
+      const bPlaying = activeCourtPlayerIds.has(b.id) ? 1 : 0;
+      if (aPlaying !== bPlaying) return aPlaying - bPlaying;
+    }
+
+    const aAssigned = effectiveAssignedCount[a.id] ?? (playerAssignedCount[a.id] || 0);
+    const bAssigned = effectiveAssignedCount[b.id] ?? (playerAssignedCount[b.id] || 0);
+    // S조는 다른 조(A,B,C,D,E조)보다 더 많은 비율의 배정/진행을 받을 수 있도록 가중치(0.65배) 적용
+    const aEffAssigned = a.tier === 'S' ? aAssigned * 0.65 : aAssigned;
+    const bEffAssigned = b.tier === 'S' ? bAssigned * 0.65 : bAssigned;
+
+    if (Math.abs(aEffAssigned - bEffAssigned) >= 0.35) {
+      return aEffAssigned - bEffAssigned;
+    }
+
+    if (options.avoidConsecutiveRests) {
+      const aRested = (a.consecutiveRestRounds || 0) > 0 ? 1 : 0;
+      const bRested = (b.consecutiveRestRounds || 0) > 0 ? 1 : 0;
+      if (bRested !== aRested) return bRested - aRested;
+      if ((b.consecutiveRestRounds || 0) !== (a.consecutiveRestRounds || 0)) {
+        return (b.consecutiveRestRounds || 0) - (a.consecutiveRestRounds || 0);
+      }
+    }
+
+    if (aEffAssigned !== bEffAssigned) return aEffAssigned - bEffAssigned;
+    const aGames = a.tier === 'S' ? a.gamesPlayed * 0.65 : a.gamesPlayed;
+    const bGames = b.tier === 'S' ? b.gamesPlayed * 0.65 : b.gamesPlayed;
+    if (aGames !== bGames) return aGames - bGames;
+    if (a.tier === 'S' && b.tier !== 'S') return -1;
+    if (b.tier === 'S' && a.tier !== 'S') return 1;
+    const regDiff = getPlayerRegistrationTime(a) - getPlayerRegistrationTime(b);
+    if (Math.abs(regDiff) >= 60000) return regDiff;
+    if (!options.avoidConsecutiveRests || options.mode === 'random') {
+      return Math.random() - 0.5;
+    }
+    if (regDiff !== 0) return regDiff;
+    return Math.random() - 0.5;
+  });
 
   const nonWaveCandidates = sortedAllCandidates.filter((p) => !currentCourtWavePlayerIds.has(p.id));
   const nonWaveMales = nonWaveCandidates.filter((p) => p.gender === 'M');
@@ -6324,19 +6466,35 @@ export function generateQueueMatchesByArrivalOrder(
   maxMatchesToGenerate?: number,
   activeMatches: CourtMatch[] = []
 ): CourtMatch[] {
-  // 1. Identify players already busy (in existing queued matches)
+  // 1. Identify players already busy (in existing normal queued matches, plus special match hold players when enough others exist)
+  const normalExistingQueue = existingQueuedMatches.filter((m) => !m.isSpecialMatch);
   const busyIds = new Set<string>();
-  existingQueuedMatches.forEach((m) => {
+  normalExistingQueue.forEach((m) => {
     busyIds.add(m.teamA.player1Id);
     busyIds.add(m.teamA.player2Id);
     busyIds.add(m.teamB.player1Id);
     busyIds.add(m.teamB.player2Id);
   });
 
-  // Merge existingQueuedMatches and activeMatches partner history and simulated rest rounds into cloned player objects
+  const specialHoldIds = getSpecialMatchHoldPlayerIds(
+    allPlayers,
+    activeCourtPlayerIds,
+    existingQueuedMatches
+  );
+  const nonBusyNonHoldCount = allPlayers.filter(
+    (p) =>
+      !busyIds.has(p.id) &&
+      !specialHoldIds.has(p.id) &&
+      isPlayerEligibleForMatchmaking(p, activeCourtPlayerIds, existingQueuedMatches)
+  ).length;
+  if (nonBusyNonHoldCount >= 4) {
+    specialHoldIds.forEach((id) => busyIds.add(id));
+  }
+
+  // Merge normalExistingQueue and activeMatches partner history and simulated rest rounds into cloned player objects
   const playersWithHistory = mergeQueuedPartnerHistory(
     allPlayers,
-    existingQueuedMatches,
+    normalExistingQueue,
     activeMatches,
     options.courtCount
   );
@@ -6855,9 +7013,11 @@ export function generateQueueMatchesByArrivalOrder(
   // User instruction: "3:1 배정은 만들지 말고 먼저 참가해 제일 처음 배정된 팀에서 대려와 복식/혼복 배정을 해줘"
   // 잔여 인원의 지정 파트너가 앞선 배정 팀(borrowable)에 있다면 우선 차출하여 파트너 동반 코트 배정 보장
   while (males.length > 0 || females.length > 0) {
-    const borrowable = getBorrowablePlayers().filter((p) =>
+    const rawBorrowable = getBorrowablePlayers().filter((p) =>
       isPlayerEligibleForMatchmaking(p, activeCourtPlayerIds, [...existingQueuedMatches, ...newMatches])
     );
+    const nonHoldBorrowable = rawBorrowable.filter((p) => !specialHoldIds.has(p.id));
+    const borrowable = nonHoldBorrowable.length >= 4 ? nonHoldBorrowable : rawBorrowable;
     const unassignedPlayers = [
       ...males.map((x) => x.player),
       ...females.map((x) => x.player),
@@ -7099,6 +7259,551 @@ export function generateQueueMatchesByArrivalOrder(
 
   return newMatches;
 }
+
+/**
+ * 스페셜 게임(isSpecialMatch === true)에 등록된 4명의 선수들이
+ * 대기열에서 자기 차례를 기다리는 동안 일반 자동 생성/대기열 생성에 중복 차출되어
+ * 기준 단계가 계속 올라가거나 코트에 뿔뿔이 흩어지는 현상을 방지하기 위해 보호(Hold)할 선수 ID 집합을 반환합니다.
+ */
+export function getSpecialMatchHoldPlayerIds(
+  _allPlayers: Player[],
+  _activeCourtPlayerIds: Set<string> = new Set(),
+  queuedMatches: CourtMatch[] = [],
+  _precomputedRawAssignedMap?: Record<string, number>
+): Set<string> {
+  const holdIds = new Set<string>();
+  const specialMatches = (queuedMatches || []).filter((m) => Boolean(m.isSpecialMatch));
+  if (specialMatches.length === 0) return holdIds;
+
+  for (const sm of specialMatches) {
+    const ids = [
+      sm.teamA?.player1Id,
+      sm.teamA?.player2Id,
+      sm.teamB?.player1Id,
+      sm.teamB?.player2Id,
+    ].filter((id): id is string => Boolean(id));
+    for (const id of ids) {
+      holdIds.add(id);
+    }
+  }
+
+  return holdIds;
+}
+
+/**
+ * 선택한 4명의 선수로 대기열 가장 아래에 등록되는 스페셜 게임(isSpecialMatch: true)을 생성합니다.
+ */
+export function createSpecialMatchFromSelectedPlayers(
+  selectedPlayerIds: string[],
+  allPlayers: Player[],
+  options?: MatchOptions,
+  activeMatches: CourtMatch[] = [],
+  existingQueuedMatches: CourtMatch[] = []
+): CourtMatch {
+  const uniqueIds = Array.from(new Set(selectedPlayerIds.filter(Boolean)));
+  if (uniqueIds.length !== 4) {
+    throw new Error('스페셜 게임 생성은 정확히 4명의 선수를 선택해야 합니다.');
+  }
+
+  const selectedPlayers = uniqueIds
+    .map((id) => allPlayers.find((p) => p.id === id))
+    .filter((p): p is Player => Boolean(p));
+
+  if (selectedPlayers.length !== 4) {
+    throw new Error('선택한 선수 정보를 찾을 수 없습니다.');
+  }
+
+  for (const sp of selectedPlayers) {
+    if (
+      !sp.isActive ||
+      sp.attendancePending ||
+      sp.specialStatus === 'resting' ||
+      sp.specialStatus === 'lesson' ||
+      sp.specialStatus === 'exited' ||
+      isPlayerLastMatchCompleted(sp)
+    ) {
+      const reason =
+        sp.specialStatus === 'resting'
+          ? '휴식중'
+          : sp.specialStatus === 'lesson'
+          ? '레슨중'
+          : '퇴장/마지막판 완료';
+      throw new Error(`${sp.name} 선수는 현재 [${reason}] 상태이므로 스페셜 게임을 생성할 수 없습니다.`);
+    }
+  }
+
+  const activeCourtIds = new Set<string>();
+  (activeMatches || []).forEach((m) => {
+    if (m && m.status !== 'completed') {
+      if (m.teamA?.player1Id) activeCourtIds.add(m.teamA.player1Id);
+      if (m.teamA?.player2Id) activeCourtIds.add(m.teamA.player2Id);
+      if (m.teamB?.player1Id) activeCourtIds.add(m.teamB.player1Id);
+      if (m.teamB?.player2Id) activeCourtIds.add(m.teamB.player2Id);
+    }
+  });
+
+  const normalQueue = (existingQueuedMatches || []).filter((m) => !m.isSpecialMatch);
+  const normalQueueCountMap: Record<string, number> = {};
+  normalQueue.forEach((m) => {
+    [m.teamA?.player1Id, m.teamA?.player2Id, m.teamB?.player1Id, m.teamB?.player2Id].forEach(
+      (id) => {
+        if (id) normalQueueCountMap[id] = (normalQueueCountMap[id] || 0) + 1;
+      }
+    );
+  });
+
+  const eligiblePlayers = allPlayers.filter(
+    (p) =>
+      p.isActive &&
+      !p.attendancePending &&
+      p.specialStatus !== 'resting' &&
+      p.specialStatus !== 'lesson' &&
+      p.specialStatus !== 'exited' &&
+      !isPlayerLastMatchCompleted(p)
+  );
+
+  const assignedRawMap: Record<string, number> = {};
+  eligiblePlayers.forEach((p) => {
+    const inCourt = activeCourtIds.has(p.id) ? 1 : 0;
+    const inNormalQueue = normalQueueCountMap[p.id] || 0;
+    assignedRawMap[p.id] = (p.gamesPlayed || 0) + inCourt + inNormalQueue;
+  });
+
+  const relativeOffsetMap = computeRelativeLateOffsetMap(eligiblePlayers, {
+    rawAssignedMap: assignedRawMap,
+  });
+
+  const getAssignedIntLevel = (p: Player): number => {
+    const raw = assignedRawMap[p.id] ?? p.gamesPlayed ?? 0;
+    const offset = relativeOffsetMap[p.id] ?? getPlayerEffectiveOffset(p, allPlayers);
+    return raw + offset;
+  };
+
+  // 생성 시점의 선택 선수 4명의 기준 배정 단계(최솟값)를 목표 단계로 고정 기록
+  const specialTargetLevel = Math.min(...selectedPlayers.map((p) => getAssignedIntLevel(p)));
+
+  const avoidDup = options?.avoidDuplicatePartners ?? true;
+  const currentMode = options?.mode ?? 'balanced';
+  const males = selectedPlayers.filter((p) => p.gender === 'M');
+  const females = selectedPlayers.filter((p) => p.gender === 'F');
+
+  let matchTitle = '스페셜';
+  let teamAPlayers: [Player, Player];
+  let teamBPlayers: [Player, Player];
+
+  if (males.length === 4) {
+    matchTitle = '스페셜 남복';
+    const balanced = balanceDoublesFour(
+      selectedPlayers[0],
+      selectedPlayers[1],
+      selectedPlayers[2],
+      selectedPlayers[3],
+      avoidDup,
+      currentMode
+    );
+    teamAPlayers = balanced.teamA;
+    teamBPlayers = balanced.teamB;
+  } else if (females.length === 4) {
+    matchTitle = '스페셜 여복';
+    const balanced = balanceDoublesFour(
+      selectedPlayers[0],
+      selectedPlayers[1],
+      selectedPlayers[2],
+      selectedPlayers[3],
+      avoidDup,
+      currentMode
+    );
+    teamAPlayers = balanced.teamA;
+    teamBPlayers = balanced.teamB;
+  } else if (males.length === 2 && females.length === 2) {
+    matchTitle = '스페셜 혼복';
+    const balanced = balanceMixedDoublesFour(
+      males[0],
+      males[1],
+      females[0],
+      females[1],
+      avoidDup,
+      currentMode
+    );
+    teamAPlayers = balanced.teamA;
+    teamBPlayers = balanced.teamB;
+  } else if (males.length === 3 && females.length === 1) {
+    matchTitle = '스페셜 혼복(3:1)';
+    const balanced = balanceThreeAndOne(
+      females[0],
+      [males[0], males[1], males[2]],
+      avoidDup,
+      currentMode
+    );
+    teamAPlayers = balanced.teamA;
+    teamBPlayers = balanced.teamB;
+  } else if (females.length === 3 && males.length === 1) {
+    matchTitle = '스페셜 혼복(3:1)';
+    const balanced = balanceThreeAndOne(
+      males[0],
+      [females[0], females[1], females[2]],
+      avoidDup,
+      currentMode
+    );
+    teamAPlayers = balanced.teamA;
+    teamBPlayers = balanced.teamB;
+  } else {
+    const balanced = balanceDoublesFour(
+      selectedPlayers[0],
+      selectedPlayers[1],
+      selectedPlayers[2],
+      selectedPlayers[3],
+      avoidDup,
+      currentMode
+    );
+    teamAPlayers = balanced.teamA;
+    teamBPlayers = balanced.teamB;
+  }
+
+  const maxExistingSpecialTime = (existingQueuedMatches || [])
+    .filter((m) => Boolean(m.isSpecialMatch))
+    .reduce((max, m) => Math.max(max, m.startedAt || 0), 0);
+  const startedAt = Math.max(Date.now(), maxExistingSpecialTime + 1);
+
+  return {
+    id: generateId(),
+    courtNumber: 0,
+    round: 1,
+    teamA: {
+      player1Id: teamAPlayers[0].id,
+      player2Id: teamAPlayers[1].id,
+      score: 0,
+    },
+    teamB: {
+      player1Id: teamBPlayers[0].id,
+      player2Id: teamBPlayers[1].id,
+      score: 0,
+    },
+    status: 'queued',
+    title: matchTitle,
+    isSpecialMatch: true,
+    specialTargetLevel,
+    startedAt,
+  };
+}
+
+export interface SpecialMatchTurnInfo {
+  isReady: boolean;
+  /**
+   * normalMatches 배열(0 .. normalMatches.length) 내에서
+   * 이 스페셜 게임이 입장해야 할 대기순서 인덱스
+   */
+  insertBeforeNormalIndex: number;
+}
+
+/**
+ * 스페셜 게임(isSpecialMatch === true)의 4명이 모든 선수의 배정 순서에 맞게
+ * 배정/진행에 방해되지 않고 코트에 투입될 수 있는 차례가 되었는지(isReady)와,
+ * 대기열 내에서 해당 스페셜 게임이 위치해야 할 정확한 대기순서(insertBeforeNormalIndex)를 계산합니다.
+ */
+export function getSpecialMatchTurnInfo(
+  specialMatch: CourtMatch | undefined | null,
+  allPlayers: Player[],
+  activeMatches: CourtMatch[] = [],
+  queuedMatches: CourtMatch[] = [],
+  options?: MatchOptions
+): SpecialMatchTurnInfo {
+  const normalQueue = (queuedMatches || []).filter((m) => !m.isSpecialMatch);
+  if (!specialMatch) {
+    return { isReady: false, insertBeforeNormalIndex: normalQueue.length };
+  }
+  if (!specialMatch.isSpecialMatch) {
+    return { isReady: true, insertBeforeNormalIndex: 0 };
+  }
+
+  const specialIds = [
+    specialMatch.teamA?.player1Id,
+    specialMatch.teamA?.player2Id,
+    specialMatch.teamB?.player1Id,
+    specialMatch.teamB?.player2Id,
+  ].filter((id): id is string => Boolean(id));
+
+  if (specialIds.length < 4 || new Set(specialIds).size < 4) {
+    return { isReady: false, insertBeforeNormalIndex: normalQueue.length };
+  }
+
+  // 1. 현재 코트에서 진행 중인 경기에 포함된 선수가 1명이라도 있으면 아직 투입 불가
+  const activeCourtIds = new Set<string>();
+  (activeMatches || []).forEach((m) => {
+    if (m && m.status !== 'completed') {
+      if (m.teamA?.player1Id) activeCourtIds.add(m.teamA.player1Id);
+      if (m.teamA?.player2Id) activeCourtIds.add(m.teamA.player2Id);
+      if (m.teamB?.player1Id) activeCourtIds.add(m.teamB.player1Id);
+      if (m.teamB?.player2Id) activeCourtIds.add(m.teamB.player2Id);
+    }
+  });
+  for (const id of specialIds) {
+    if (activeCourtIds.has(id)) {
+      return { isReady: false, insertBeforeNormalIndex: normalQueue.length };
+    }
+  }
+
+  const specialIdSet = new Set(specialIds);
+
+  // 2. 먼저 생성된 스페셜 게임 중 동일 선수가 겹치는 스페셜 게임이 대기열에 남아 있으면 앞선 스페셜 게임이 먼저 소화되어야 함
+  const currentStartedAt = specialMatch.startedAt ?? 0;
+  for (const qm of queuedMatches || []) {
+    if (!qm.isSpecialMatch || qm.id === specialMatch.id) continue;
+    const qmStartedAt = qm.startedAt ?? 0;
+    const isEarlierSpecial =
+      qmStartedAt < currentStartedAt ||
+      (qmStartedAt === currentStartedAt && qm.id.localeCompare(specialMatch.id) < 0);
+    if (isEarlierSpecial) {
+      const qmIds = [
+        qm.teamA?.player1Id,
+        qm.teamA?.player2Id,
+        qm.teamB?.player1Id,
+        qm.teamB?.player2Id,
+      ];
+      if (qmIds.some((id) => id && specialIdSet.has(id))) {
+        return { isReady: false, insertBeforeNormalIndex: normalQueue.length };
+      }
+    }
+  }
+
+  // 3. 스페셜 게임 4명 모두 현재 정상 출전 가능 상태(활성, 출석완료, 휴식/레슨/퇴장 아님)여야 함
+  const playerMap = new Map<string, Player>(allPlayers.map((p) => [p.id, p]));
+  const specialPlayers: Player[] = [];
+  for (const id of specialIds) {
+    const p = playerMap.get(id);
+    if (
+      !p ||
+      !p.isActive ||
+      p.attendancePending ||
+      p.specialStatus === 'resting' ||
+      p.specialStatus === 'lesson' ||
+      p.specialStatus === 'exited' ||
+      isPlayerLastMatchCompleted(p)
+    ) {
+      return { isReady: false, insertBeforeNormalIndex: normalQueue.length };
+    }
+    specialPlayers.push(p);
+  }
+
+  // 스페셜 게임 선수 중 이전 일반 대기 경기에 이미 편성된 경기가 있다면 그 경기보다는 뒤에 위치해야 함
+  let minPrefixIdx = 0;
+  normalQueue.forEach((nm, idx) => {
+    const nmIds = [
+      nm.teamA?.player1Id,
+      nm.teamA?.player2Id,
+      nm.teamB?.player1Id,
+      nm.teamB?.player2Id,
+    ];
+    if (nmIds.some((id) => id && specialIdSet.has(id))) {
+      minPrefixIdx = Math.max(minPrefixIdx, idx + 1);
+    }
+  });
+
+  // 4. 전체 정상 참가자 기준 배정/진행 순서 비교 (완료 게임 수 + 코트 진행 + 일반 대기열 배정 + 지각 오프셋)
+  const eligiblePlayers = allPlayers.filter(
+    (p) =>
+      p.isActive &&
+      !p.attendancePending &&
+      p.specialStatus !== 'resting' &&
+      p.specialStatus !== 'lesson' &&
+      p.specialStatus !== 'exited' &&
+      !isPlayerLastMatchCompleted(p)
+  );
+
+  // 모든 스페셜 대기에 묶여 있는 선수들은 일반 경기 후보군에서 보호(Hold)되므로 비교 대상(otherEligible)에서 제외
+  const allSpecialHoldIds = getSpecialMatchHoldPlayerIds(
+    allPlayers,
+    activeCourtIds,
+    queuedMatches
+  );
+  const otherEligible = eligiblePlayers.filter((p) => !allSpecialHoldIds.has(p.id));
+  if (otherEligible.length < 4) {
+    return { isReady: true, insertBeforeNormalIndex: minPrefixIdx };
+  }
+
+  // 전체 일반 대기열 기준 스페셜 선수들의 현재 목표 단계(targetLevel) 산출
+  const totalNormalQueueCountMap: Record<string, number> = {};
+  normalQueue.forEach((m) => {
+    [m.teamA?.player1Id, m.teamA?.player2Id, m.teamB?.player1Id, m.teamB?.player2Id].forEach(
+      (id) => {
+        if (id) totalNormalQueueCountMap[id] = (totalNormalQueueCountMap[id] || 0) + 1;
+      }
+    );
+  });
+
+  const totalAssignedRawMap: Record<string, number> = {};
+  eligiblePlayers.forEach((p) => {
+    const inCourt = activeCourtIds.has(p.id) ? 1 : 0;
+    const inNormalQueue = totalNormalQueueCountMap[p.id] || 0;
+    totalAssignedRawMap[p.id] = (p.gamesPlayed || 0) + inCourt + inNormalQueue;
+  });
+
+  const totalRelativeOffsetMap = computeRelativeLateOffsetMap(eligiblePlayers, {
+    rawAssignedMap: totalAssignedRawMap,
+  });
+
+  const minCurrentSLevel = Math.min(
+    ...specialPlayers.map((p) => {
+      const raw = totalAssignedRawMap[p.id] ?? p.gamesPlayed ?? 0;
+      const offset = totalRelativeOffsetMap[p.id] ?? getPlayerEffectiveOffset(p, allPlayers);
+      return raw + offset;
+    })
+  );
+  const targetLevel =
+    typeof specialMatch.specialTargetLevel === 'number'
+      ? Math.min(specialMatch.specialTargetLevel, minCurrentSLevel)
+      : minCurrentSLevel;
+
+  // 스페셜 대기 외 나머지 참가자(otherEligible) 중에서 성비 조건상 실제로 일반 경기 편성이 가능한 인원만 판별
+  const mode = options?.mode ?? 'balanced';
+  const otherMales = otherEligible.filter((p) => p.gender === 'M');
+  const otherFemales = otherEligible.filter((p) => p.gender === 'F');
+  const canAssignMale =
+    otherMales.length >= 4 ||
+    (mode !== 'doubles_only' && otherMales.length >= 2 && otherFemales.length >= 2) ||
+    (mode === 'random' && otherEligible.length >= 4 && otherMales.length >= 1 && otherFemales.length >= 1);
+  const canAssignFemale =
+    otherFemales.length >= 4 ||
+    (mode !== 'doubles_only' && otherMales.length >= 2 && otherFemales.length >= 2) ||
+    (mode === 'random' && otherEligible.length >= 4 && otherMales.length >= 1 && otherFemales.length >= 1);
+
+  // 일반 대기열의 앞에서부터(prefixLen = 0 .. normalQueue.length) 순차 누적하며
+  // 다른 선수들이 모두 targetLevel을 넘어서는 정확한 대기열 입장 순서(prefixLen)를 탐색
+  const prefixQueueCountMap: Record<string, number> = {};
+  for (let i = 0; i < minPrefixIdx && i < normalQueue.length; i++) {
+    const m = normalQueue[i];
+    [m.teamA?.player1Id, m.teamA?.player2Id, m.teamB?.player1Id, m.teamB?.player2Id].forEach(
+      (id) => {
+        if (id) prefixQueueCountMap[id] = (prefixQueueCountMap[id] || 0) + 1;
+      }
+    );
+  }
+
+  for (let prefixLen = minPrefixIdx; prefixLen <= normalQueue.length; prefixLen++) {
+    if (prefixLen > minPrefixIdx) {
+      const m = normalQueue[prefixLen - 1];
+      [m.teamA?.player1Id, m.teamA?.player2Id, m.teamB?.player1Id, m.teamB?.player2Id].forEach(
+        (id) => {
+          if (id) prefixQueueCountMap[id] = (prefixQueueCountMap[id] || 0) + 1;
+        }
+      );
+    }
+
+    const prefixAssignedRawMap: Record<string, number> = {};
+    eligiblePlayers.forEach((p) => {
+      const inCourt = activeCourtIds.has(p.id) ? 1 : 0;
+      const inPrefixQueue = prefixQueueCountMap[p.id] || 0;
+      prefixAssignedRawMap[p.id] = (p.gamesPlayed || 0) + inCourt + inPrefixQueue;
+    });
+
+    const prefixOffsetMap = computeRelativeLateOffsetMap(eligiblePlayers, {
+      rawAssignedMap: prefixAssignedRawMap,
+    });
+
+    const assignableOthersAtOrBelow = otherEligible.filter((q) => {
+      if (!(q.gender === 'M' ? canAssignMale : canAssignFemale)) return false;
+      const raw = prefixAssignedRawMap[q.id] ?? q.gamesPlayed ?? 0;
+      const offset = prefixOffsetMap[q.id] ?? getPlayerEffectiveOffset(q, allPlayers);
+      return raw + offset <= targetLevel;
+    });
+
+    if (assignableOthersAtOrBelow.length < 4) {
+      return { isReady: true, insertBeforeNormalIndex: prefixLen };
+    }
+  }
+
+  return { isReady: false, insertBeforeNormalIndex: normalQueue.length };
+}
+
+/**
+ * 스페셜 게임(isSpecialMatch === true)의 4명이 모든 선수의 배정 순서에 맞게
+ * 배정/진행에 방해되지 않고 코트에 투입될 수 있는 차례가 되었는지(무지개 오로라 활성화 조건) 판별합니다.
+ */
+export function isSpecialMatchTurnReady(
+  specialMatch: CourtMatch | undefined | null,
+  allPlayers: Player[],
+  activeMatches: CourtMatch[] = [],
+  queuedMatches: CourtMatch[] = [],
+  options?: MatchOptions
+): boolean {
+  return getSpecialMatchTurnInfo(
+    specialMatch,
+    allPlayers,
+    activeMatches,
+    queuedMatches,
+    options
+  ).isReady;
+}
+
+/**
+ * 스페셜 게임(isSpecialMatch === true)의 대기열 순서를 정렬합니다:
+ * - 모든 선수의 배정/진행 순서에 맞게 출전 차례가 도래하여 오로라 애니메이션이 켜진(isReady === true)
+ *   스페셜 게임은 대기열 내에서 자신이 입장해야 할 정확한 대기순서(insertBeforeNormalIndex)로 이동합니다.
+ * - 아직 출전 차례가 되지 않은(isReady === false) 스페셜 게임은
+ *   새로운 일반 대기 경기가 추가되더라도 항상 대기열 가장 아래(최하단)에 유지됩니다.
+ */
+export function orderQueuedMatchesWithSpecial(
+  matches: CourtMatch[],
+  allPlayers?: Player[],
+  activeMatches: CourtMatch[] = [],
+  options?: MatchOptions
+): CourtMatch[] {
+  if (!matches || matches.length <= 1) return matches || [];
+  const hasSpecial = matches.some((m) => Boolean(m.isSpecialMatch));
+  if (!hasSpecial) return matches;
+
+  const normalMatches = matches.filter((m) => !m.isSpecialMatch);
+  const specialMatches = matches
+    .filter((m) => Boolean(m.isSpecialMatch))
+    .sort((a, b) => {
+      const tA = a.startedAt ?? 0;
+      const tB = b.startedAt ?? 0;
+      if (tA !== tB) return tA - tB;
+      return a.id.localeCompare(b.id);
+    });
+
+  if (!allPlayers || allPlayers.length === 0) {
+    const fallbackOrdered = [...normalMatches, ...specialMatches];
+    const isSame =
+      fallbackOrdered.length === matches.length &&
+      fallbackOrdered.every((m, idx) => m.id === matches[idx]?.id);
+    return isSame ? matches : fallbackOrdered;
+  }
+
+  const waitingSpecialMatches: CourtMatch[] = [];
+  const bucketsBeforeNormal: Map<number, CourtMatch[]> = new Map();
+
+  for (const sm of specialMatches) {
+    const turnInfo = getSpecialMatchTurnInfo(sm, allPlayers, activeMatches, matches, options);
+    if (turnInfo.isReady) {
+      const idx = Math.max(0, Math.min(normalMatches.length, turnInfo.insertBeforeNormalIndex));
+      const list = bucketsBeforeNormal.get(idx) || [];
+      list.push(sm);
+      bucketsBeforeNormal.set(idx, list);
+    } else {
+      waitingSpecialMatches.push(sm);
+    }
+  }
+
+  const ordered: CourtMatch[] = [];
+  for (let i = 0; i <= normalMatches.length; i++) {
+    const readyAtI = bucketsBeforeNormal.get(i);
+    if (readyAtI && readyAtI.length > 0) {
+      ordered.push(...readyAtI);
+    }
+    if (i < normalMatches.length) {
+      ordered.push(normalMatches[i]);
+    }
+  }
+  ordered.push(...waitingSpecialMatches);
+
+  const isSameOrder =
+    ordered.length === matches.length &&
+    ordered.every((m, idx) => m.id === matches[idx]?.id);
+
+  return isSameOrder ? matches : ordered;
+}
+
 
 
 

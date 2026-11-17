@@ -155,6 +155,60 @@ export function getArchiveDateForBoundaryKey(boundaryKey: string): string {
 }
 
 /**
+ * 특정 04:00 경계 키('YYYY-MM-DD')의 실제 오전 04:00:00.000 타임스탬프 반환
+ */
+export function getFourAmTimestampForBoundaryKey(boundaryKey: string): number {
+  const d = parseDateKey(boundaryKey);
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 4, 0, 0, 0).getTime();
+}
+
+/**
+ * 현재 화면의 운동 데이터가 특정 04:00 경계 시각(예: 오늘 오전 04:00) 이후에 새로 시작된 당일 운동인지 판별
+ */
+export function didWorkoutStartAfterFourAmBoundary(
+  snapshot: Partial<DailyWorkoutRecord> | null | undefined,
+  boundaryKey: string
+): boolean {
+  if (!snapshot || !isWorkoutSnapshotNonEmpty(snapshot)) return false;
+  const boundaryFourAmMs = getFourAmTimestampForBoundaryKey(boundaryKey);
+  const timestamps: number[] = [];
+
+  (snapshot.players || []).forEach((p) => {
+    if (typeof p.registeredAt === 'number' && p.registeredAt > 0) timestamps.push(p.registeredAt);
+    else if (typeof p.createdAt === 'number' && p.createdAt > 0) timestamps.push(p.createdAt);
+  });
+
+  (snapshot.courts || []).forEach((c) => {
+    const idMatch = typeof c?.id === 'string' ? c.id.match(/^court[_-](\d+)$/) : null;
+    if (idMatch) {
+      const ts = Number(idMatch[1]);
+      if (Number.isFinite(ts) && ts > 0) timestamps.push(ts);
+    }
+  });
+
+  const collectMatchTs = (m?: CourtMatch | null) => {
+    if (!m) return;
+    if (typeof m.startedAt === 'number' && m.startedAt > 0) timestamps.push(m.startedAt);
+    if (typeof m.completedAt === 'number' && m.completedAt > 0) timestamps.push(m.completedAt);
+    if (m.playerAssignedAt && typeof m.playerAssignedAt === 'object') {
+      Object.values(m.playerAssignedAt).forEach((t) => {
+        if (typeof t === 'number' && t > 0) timestamps.push(t);
+      });
+    }
+  };
+
+  (snapshot.activeMatches || []).forEach(collectMatchTs);
+  (snapshot.queuedMatches || []).forEach(collectMatchTs);
+  (snapshot.roundHistory || []).forEach((r) => {
+    if (typeof r?.timestamp === 'number' && r.timestamp > 0) timestamps.push(r.timestamp);
+    (r?.matches || []).forEach(collectMatchTs);
+  });
+
+  if (timestamps.length === 0) return false;
+  return Math.min(...timestamps) >= boundaryFourAmMs;
+}
+
+/**
  * 테스트(선수 24명 생성)로 만들어진 선수인지 판별
  */
 export function isTestPlayerRecord(
@@ -617,14 +671,58 @@ export function loadFourAmState(now: Date = new Date()): FourAmResetState {
     try {
       const parsed = JSON.parse(raw);
       if (parsed && typeof parsed === 'object' && typeof parsed.lastCompletedBoundaryKey === 'string') {
-        return {
-          lastCompletedBoundaryKey: parsed.lastCompletedBoundaryKey,
-          snoozeUntil: parsed.snoozeUntil ?? null,
-          modalExpiresAt: parsed.modalExpiresAt ?? null,
-          pendingBoundaryKey: parsed.pendingBoundaryKey ?? null,
-          pendingArchiveDate: parsed.pendingArchiveDate ?? null,
+        const boundaryFourAmMs = getFourAmTimestampForBoundaryKey(currentBoundaryKey);
+        const nowMs = now.getTime();
+        // 오전 04:00 정각 구간이 아닌 일반 시간에 앱을 초기에 켰을 때,
+        // 이전에 잘못 남아있던 modalExpiresAt / snoozeUntil로 인해 초기화 알림이 뜨지 않도록 정리
+        const isInFourAmTriggerWindow =
+          nowMs >= boundaryFourAmMs && nowMs <= boundaryFourAmMs + THREE_MINUTES_MS;
+        const isInFourAmSnoozeWindow =
+          nowMs >= boundaryFourAmMs && nowMs <= boundaryFourAmMs + 2 * 60 * 60 * 1000;
+
+        const validModalExpiresAt =
+          isInFourAmTriggerWindow &&
+          typeof parsed.modalExpiresAt === 'number' &&
+          parsed.modalExpiresAt > nowMs
+            ? parsed.modalExpiresAt
+            : null;
+        const validSnoozeUntil =
+          isInFourAmSnoozeWindow &&
+          typeof parsed.snoozeUntil === 'number' &&
+          parsed.snoozeUntil > nowMs
+            ? parsed.snoozeUntil
+            : null;
+
+        const hadStalePendingReset =
+          !validModalExpiresAt &&
+          !validSnoozeUntil &&
+          Boolean(parsed.modalExpiresAt || parsed.snoozeUntil) &&
+          typeof parsed.pendingArchiveDate === 'string';
+
+        const cleanedState: FourAmResetState = {
+          lastCompletedBoundaryKey: hadStalePendingReset
+            ? parsed.pendingArchiveDate
+            : parsed.lastCompletedBoundaryKey,
+          snoozeUntil: validSnoozeUntil,
+          modalExpiresAt: validModalExpiresAt,
+          pendingBoundaryKey:
+            validModalExpiresAt || validSnoozeUntil ? (parsed.pendingBoundaryKey ?? null) : null,
+          pendingArchiveDate:
+            validModalExpiresAt || validSnoozeUntil ? (parsed.pendingArchiveDate ?? null) : null,
           earlyMorningBypassBoundaryKey: parsed.earlyMorningBypassBoundaryKey ?? null,
         };
+
+        if (
+          cleanedState.modalExpiresAt !== (parsed.modalExpiresAt ?? null) ||
+          cleanedState.snoozeUntil !== (parsed.snoozeUntil ?? null)
+        ) {
+          setDeviceStorageItem(
+            DEVICE_STORAGE_KEYS.FOUR_AM_STATE,
+            JSON.stringify(cleanedState)
+          );
+        }
+
+        return cleanedState;
       }
     } catch {
       // fallback below

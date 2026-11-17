@@ -8,20 +8,12 @@ import {
   Plus,
   Trash2,
   Edit2,
-  ShieldCheck,
-  CheckCircle2,
   AlertCircle,
+  CheckCircle2,
   RotateCcw,
-  Download,
-  Upload,
   FlaskConical,
 } from 'lucide-react';
 import { soundEffects } from '../utils/audio';
-import {
-  exportDataToDeviceFile,
-  parseAndRestoreDeviceBackupJson,
-  DEVICE_STORAGE_KEYS,
-} from '../utils/deviceStorage';
 import { isTestPlayer } from '../utils/masterMemberStorage';
 
 interface MasterMemberModalProps {
@@ -54,7 +46,6 @@ export const MasterMemberModal: React.FC<MasterMemberModalProps> = ({
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [showAddForm, setShowAddForm] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // New Member Form State
   const [newName, setNewName] = useState('');
@@ -69,7 +60,7 @@ export const MasterMemberModal: React.FC<MasterMemberModalProps> = ({
   const [editTier, setEditTier] = useState<Tier>('C');
   const editMemberNameInputRef = useRef<HTMLInputElement>(null);
 
-  // In-app Alert / Confirm States
+  // In-app Alert / Confirm Dialog States
   const [modalAlert, setModalAlert] = useState<string | null>(null);
   const [deleteConfirmMember, setDeleteConfirmMember] = useState<MasterMember | null>(null);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
@@ -400,80 +391,6 @@ export const MasterMemberModal: React.FC<MasterMemberModalProps> = ({
               <RotateCcw className="w-3 h-3 shrink-0" />
               <span>회원초기화</span>
             </button>
-          </div>
-        </div>
-
-        {/* Safe Device Internal Local Storage Notice Banner & File Backup/Restore */}
-        <div className="px-5 py-2.5 bg-purple-950/40 border-b border-purple-500/20 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs text-purple-200 shrink-0">
-          <div className="flex items-center gap-2">
-            <ShieldCheck className="w-4 h-4 text-purple-400 shrink-0" />
-            <span className="font-semibold">
-              전체 회원 및 앱 데이터 저장
-            </span>
-          </div>
-          <div className="flex items-center gap-1.5 shrink-0 self-end sm:self-auto">
-            <button
-              type="button"
-              onClick={async () => {
-                soundEffects.playRacketHit();
-                const ok = await exportDataToDeviceFile();
-                if (ok) {
-                  setModalAlert('기기 내부 저장소(파일)로 데이터 백업이 완료되었습니다.');
-                }
-              }}
-              className="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-purple-500/20 hover:bg-purple-500/35 text-purple-200 hover:text-white border border-purple-400/30 flex items-center gap-1 transition-all cursor-pointer active:scale-95"
-              title="현재 기기 내부 파일(.json)로 저장"
-            >
-              <Download className="w-3 h-3" />
-              <span>기기 파일 저장</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                soundEffects.playRacketHit();
-                fileInputRef.current?.click();
-              }}
-              className="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white border border-slate-700 flex items-center gap-1 transition-all cursor-pointer active:scale-95"
-              title="기기 내부에 저장된 백업 파일(.json) 불러오기"
-            >
-              <Upload className="w-3 h-3" />
-              <span>기기 파일 불러오기</span>
-            </button>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".json,application/json"
-              className="hidden"
-              onChange={(e) => {
-                const file = e.target.files?.[0];
-                e.target.value = '';
-                if (!file) return;
-                const reader = new FileReader();
-                reader.onload = () => {
-                  const text = typeof reader.result === 'string' ? reader.result : '';
-                  const res = parseAndRestoreDeviceBackupJson(text);
-                  if (res.success) {
-                    const rawMembers = res.restoredKeys[DEVICE_STORAGE_KEYS.MASTER_MEMBERS];
-                    if (rawMembers) {
-                      try {
-                        const parsedMembers = JSON.parse(rawMembers);
-                        if (Array.isArray(parsedMembers)) {
-                          onUpdateMasterMembers(parsedMembers);
-                        }
-                      } catch {
-                        // ignore
-                      }
-                    }
-                    soundEffects.playWhistle();
-                    setModalAlert(res.message);
-                  } else {
-                    soundEffects.playScorePoint();
-                    setModalAlert(res.message);
-                  }
-                };
-                reader.readAsText(file);
-              }}
-            />
           </div>
         </div>
 

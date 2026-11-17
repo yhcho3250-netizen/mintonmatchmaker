@@ -198,8 +198,13 @@ export const syncPlayersAndMasterMembers = (
       };
     }
 
-    // 3. 일치하는 회원이 없는 경우 (새로운 참가자 또는 동명이인이지만 성별/급수가 다른 회원):
-    // 신규 전체 회원으로 등록하고 player와 연결
+    // 이미 masterMemberId가 부여되어 있던 선수의 회원이 전체 회원 관리에서 명시적으로 삭제/초기화되었거나
+    // 다른 회원 명부 파일을 불러와 제외된 경우에는 삭제된 회원이 다시 살아나지 않도록 신규 생성하지 않음
+    if (player.masterMemberId) {
+      return player;
+    }
+
+    // 3. 아직 masterMemberId가 없는 신규 참가자인 경우에만 신규 전체 회원으로 등록하고 player와 연결
     const newMasterId = `master_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
     const newMember: MasterMember = {
       id: newMasterId,
@@ -236,6 +241,85 @@ export const syncPlayersAndMasterMembers = (
     hasMemberChanges,
     hasPlayerChanges,
   };
+};
+
+/**
+ * 전체 회원 파일 불러오기 또는 전체 회원 명부 변경 시,
+ * 참가자/보관선수 목록의 선수 정보(이름, 성별, 급수, masterMemberId)를 불러온 전체 회원 정보 기준으로 즉시 동기화합니다.
+ */
+export const reconcilePlayersWithMasterMembers = (
+  players: Player[],
+  members: MasterMember[]
+): {
+  updatedPlayers: Player[];
+  hasChanges: boolean;
+} => {
+  if (players.length === 0 || members.length === 0) {
+    return { updatedPlayers: players, hasChanges: false };
+  }
+
+  const memberById = new Map<string, MasterMember>();
+  members.forEach((m) => memberById.set(m.id, m));
+
+  let hasChanges = false;
+  const updatedPlayers = players.map((p) => {
+    if (isTestPlayer(p)) return p;
+    const cleanName = p.name.trim();
+    if (!cleanName) return p;
+
+    let matchedMember: MasterMember | undefined = p.masterMemberId
+      ? memberById.get(p.masterMemberId)
+      : undefined;
+
+    if (!matchedMember) {
+      matchedMember = members.find(
+        (m) =>
+          m.name.trim().toLowerCase() === cleanName.toLowerCase() &&
+          m.gender === p.gender &&
+          m.tier === p.tier
+      );
+    }
+
+    if (!matchedMember) {
+      const sameNameAndGender = members.filter(
+        (m) =>
+          m.name.trim().toLowerCase() === cleanName.toLowerCase() &&
+          m.gender === p.gender
+      );
+      if (sameNameAndGender.length === 1) {
+        matchedMember = sameNameAndGender[0];
+      } else if (sameNameAndGender.length === 0) {
+        const sameNameOnly = members.filter(
+          (m) => m.name.trim().toLowerCase() === cleanName.toLowerCase()
+        );
+        if (sameNameOnly.length === 1) {
+          matchedMember = sameNameOnly[0];
+        }
+      }
+    }
+
+    if (!matchedMember) return p;
+
+    if (
+      p.name !== matchedMember.name ||
+      p.gender !== matchedMember.gender ||
+      p.tier !== matchedMember.tier ||
+      p.masterMemberId !== matchedMember.id
+    ) {
+      hasChanges = true;
+      return {
+        ...p,
+        name: matchedMember.name,
+        gender: matchedMember.gender,
+        tier: matchedMember.tier,
+        masterMemberId: matchedMember.id,
+      };
+    }
+
+    return p;
+  });
+
+  return { updatedPlayers, hasChanges };
 };
 
 /**

@@ -19,20 +19,21 @@ import {
   ListPlus,
   Volume2,
   Maximize2,
-  HeartHandshake,
   ArrowLeftRight,
   ChevronLeft,
   ChevronRight,
   Flag,
+  Calendar,
 } from 'lucide-react';
 import { soundEffects } from '../utils/audio';
+import { CrossedRacketsIcon } from './CrossedRacketsIcon';
 
 interface UserGuideModalProps {
   isOpen: boolean;
   onClose: () => void;
 }
 
-type GuideTab = 'quick' | 'courts' | 'games' | 'players' | 'tips';
+type GuideTab = 'quick' | 'courts' | 'games' | 'players' | 'calendar' | 'tips';
 
 export const UserGuideModal: React.FC<UserGuideModalProps> = ({ isOpen, onClose }) => {
   const [activeTab, setActiveTab] = useState<GuideTab>('quick');
@@ -146,7 +147,7 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({ isOpen, onClose 
                   MATCHMAKER 사용법 가이드
                 </h2>
                 <span className="px-2 py-0.5 rounded-full text-[10px] sm:text-[11px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-                  핵심요약
+                  최신 업데이트
                 </span>
               </div>
               <p className="text-[11px] sm:text-xs text-slate-400">
@@ -236,6 +237,19 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({ isOpen, onClose 
 
             <button
               type="button"
+              onClick={() => handleTabChange('calendar')}
+              className={`px-3 py-1.5 rounded-xl font-bold transition-all whitespace-nowrap cursor-pointer flex items-center gap-1.5 shrink-0 ${
+                activeTab === 'calendar'
+                  ? 'bg-emerald-500 text-slate-950 shadow-sm shadow-emerald-500/20'
+                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
+              }`}
+            >
+              <Calendar className="w-3.5 h-3.5" />
+              <span>📅 기록 캘린더</span>
+            </button>
+
+            <button
+              type="button"
               onClick={() => handleTabChange('tips')}
               className={`px-3 py-1.5 rounded-xl font-bold transition-all whitespace-nowrap cursor-pointer flex items-center gap-1.5 shrink-0 ${
                 activeTab === 'tips'
@@ -259,88 +273,69 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({ isOpen, onClose 
         </div>
 
         {/* Tab Content Body */}
-        <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-3 text-xs sm:text-sm text-slate-300">
+        <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-2.5 text-xs text-slate-300">
           {/* TAB 1: 3단계 빠른 시작 */}
           {activeTab === 'quick' && (
-            <div className="space-y-3">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5">
-                <div className="p-3 rounded-xl bg-slate-950/70 border border-slate-800 space-y-1.5">
-                  <div className="flex items-center gap-2">
+            <div className="space-y-2.5">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                <div className="p-3 rounded-xl bg-slate-950/70 border border-slate-800 space-y-1">
+                  <div className="flex items-center gap-1.5">
                     <span className="w-5 h-5 rounded-md bg-emerald-500/20 text-emerald-400 font-black text-xs flex items-center justify-center">1</span>
-                    <h4 className="font-bold text-white text-xs sm:text-sm">참가자 등록 &amp; 출석</h4>
+                    <h4 className="font-bold text-white">참가자 등록 &amp; 출석</h4>
                   </div>
-                  <p className="text-xs text-slate-300 leading-relaxed">
-                    <strong>[일괄 등록]</strong>으로 명단 등록 후 도착순으로 <strong>[출석]</strong> 클릭 시 오름차순 등록
-                    <br />
-                    <span className="text-emerald-400 font-mono text-[11px]">예: 홍길동 12, 박지성 남 A</span>
+                  <p className="text-slate-300 leading-snug">
+                    <strong>[일괄 등록]</strong> → 상단 <strong>[일괄 등록하기]</strong> 후 도착순 <strong>[출석]</strong> 터치
                   </p>
                 </div>
 
-                <div className="p-3 rounded-xl bg-slate-950/70 border border-slate-800 space-y-1.5">
-                  <div className="flex items-center gap-2">
+                <div className="p-3 rounded-xl bg-slate-950/70 border border-slate-800 space-y-1">
+                  <div className="flex items-center gap-1.5">
                     <span className="w-5 h-5 rounded-md bg-amber-500/20 text-amber-400 font-black text-xs flex items-center justify-center">2</span>
-                    <h4 className="font-bold text-white text-xs sm:text-sm">코트 &amp; 대진 생성</h4>
+                    <h4 className="font-bold text-white">코트 &amp; 대진 생성</h4>
                   </div>
-                  <p className="text-xs text-slate-300 leading-relaxed">
-                    <strong>[코트 생성]</strong> 후 <strong>[자동/연속/남복/여복/혼복/참가순]</strong> 클릭 시 맞춤 알고리즘 편성
+                  <p className="text-slate-300 leading-snug">
+                    <strong>[코트 생성]</strong> 후 <strong>[자동/연속/남복/여복/혼복/참가순]</strong>으로 편성
                   </p>
                 </div>
 
-                <div className="p-3 rounded-xl bg-slate-950/70 border border-slate-800 space-y-1.5">
-                  <div className="flex items-center gap-2">
+                <div className="p-3 rounded-xl bg-slate-950/70 border border-slate-800 space-y-1">
+                  <div className="flex items-center gap-1.5">
                     <span className="w-5 h-5 rounded-md bg-blue-500/20 text-blue-400 font-black text-xs flex items-center justify-center">3</span>
-                    <h4 className="font-bold text-white text-xs sm:text-sm">코트 투입 &amp; 완료</h4>
+                    <h4 className="font-bold text-white">코트 투입 &amp; 완료</h4>
                   </div>
-                  <p className="text-xs text-slate-300 leading-relaxed">
-                    게임목록 <strong>[n코트]</strong> 터치 후 대기열 <strong>[선택]</strong>으로 투입, 경기 후 코트 중앙 <strong>[완료]</strong> 클릭
+                  <p className="text-slate-300 leading-snug">
+                    게임목록 <strong>[n코트]</strong> 터치 → 대기열 <strong>[선택]</strong> 투입 → 코트 중앙 <strong>[완료]</strong>
                   </p>
                 </div>
               </div>
 
-              <div className="p-3 rounded-xl bg-slate-950/60 border border-slate-800/80 grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-                <div><strong className="text-emerald-400">🏟️ 코트 현황:</strong> 타이머, 중앙 [완료], 예상 매칭 미리보기, 꼬깔 순환</div>
-                <div><strong className="text-amber-300">📋 게임 목록:</strong> [n코트] 꼬깔 실시간 연동, 선택 인원 대기열 생성, 1:1 교체</div>
-                <div><strong className="text-blue-300">👥 참가자 명단:</strong> 일괄등록 [출석체크], 꼬깔확인·콕제출, 0.5초 상태 메뉴</div>
-                <div><strong className="text-purple-300">📊 기록 &amp; 옵션:</strong> 이전 배정 경기 중복 방지, 휴식자 우선 출전 설정</div>
+              <div className="p-3 rounded-xl bg-slate-950/60 border border-slate-800/80 grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                <div><strong className="text-emerald-400">🏟️ 코트 현황:</strong> 중앙 [완료], 예상 매칭, 꼬깔 순환, 1:1 교체</div>
+                <div><strong className="text-amber-300">📋 게임 목록:</strong> [n코트] 꼬깔 연동, 선택 인원 대기열 생성</div>
+                <div><strong className="text-blue-300">👥 참가자 명단:</strong> [출석체크], 꼬깔확인·콕제출, 0.5초 상태 메뉴</div>
+                <div><strong className="text-purple-300">📅 기록 캘린더:</strong> 최근 1개월 보관·열기, AM 04:00 자동 저장</div>
               </div>
             </div>
           )}
 
           {/* TAB 2: 코트 현황 */}
           {activeTab === 'courts' && (
-            <div className="space-y-2.5 text-xs">
+            <div className="space-y-2">
               <div className="p-3 rounded-xl bg-slate-950/70 border border-slate-800 space-y-1">
                 <div className="font-bold text-purple-300 flex items-center gap-1.5">
                   <Clock className="w-3.5 h-3.5" />
-                  <span>꼬깔(턴) 순환 &amp; 게임목록 실시간 연동</span>
+                  <span>꼬깔(턴) 순환 &amp; 연동</span>
                 </div>
-                <p className="text-slate-300">
-                  • <strong>빨강(우리클럽) ↔ 회색(타클럽)</strong>: 경기 완료 시 1번째 → 2번째 꼬깔 순으로 자동 회전합니다.
-                  <br />
-                  • 각 코트 <code className="text-emerald-300">n코트</code> 왼쪽의 꼬깔은 <strong>[게임 목록]의 n코트 버튼 왼쪽 꼬깔과 실시간 연동</strong>됩니다.
-                </p>
+                <p>• <strong>빨강(우리클럽) ↔ 회색(타클럽)</strong>: 경기 [완료] 시 자동 회전 (게임 목록 n코트 꼬깔과 실시간 연동)</p>
               </div>
 
               <div className="p-3 rounded-xl bg-slate-950/70 border border-slate-800 space-y-1">
                 <div className="font-bold text-amber-300 flex items-center gap-1.5">
                   <Sparkles className="w-3.5 h-3.5" />
-                  <span>빈 코트 예상 매칭 &amp; 자동 생성</span>
+                  <span>빈 코트 예상 매칭 &amp; 중앙 [완료] / 교체</span>
                 </div>
-                <p className="text-slate-300">
-                  • 빈 코트와 <strong>[배정선수관리]</strong>의 <strong>예상 매칭 4명</strong>은 <strong>[이 코트 경기 자동 생성]</strong> 클릭 시 100% 동일하게 배정됩니다. (미출석 선수는 제외)
-                </p>
-              </div>
-
-              <div className="p-3 rounded-xl bg-slate-950/70 border border-slate-800 space-y-1">
-                <div className="font-bold text-emerald-400 flex items-center gap-1.5">
-                  <CheckCircle2 className="w-3.5 h-3.5" />
-                  <span>중앙 [완료] &amp; [되돌리기] / 1:1 교체</span>
-                </div>
-                <p className="text-slate-300">
-                  • 선수 중앙 동그라미 <strong>[완료]</strong>로 원클릭 종료 (실수 시 <strong>[되돌리기]</strong>로 복구)
-                  <br />
-                  • 코트 선수를 터치하여 다른 선수와 1:1 교체할 수 있으며, <strong>[교체 취소]</strong> 버튼 또는 해당 선수를 다시 터치하면 해제됩니다.
-                </p>
+                <p>• <strong>예상 매칭 4명:</strong> [이 코트 경기 자동 생성] 시 동일 배정 (미출석·휴식·레슨·퇴장 제외)</p>
+                <p>• <strong>중앙 [완료] &amp; 교체:</strong> 원클릭 경기 종료([되돌리기] 복구) / 선수 터치로 1:1 교체</p>
               </div>
 
               <div className="p-3 rounded-xl bg-slate-950/70 border border-slate-800 space-y-1.5">
@@ -348,11 +343,19 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({ isOpen, onClose 
                   <Flag className="w-3.5 h-3.5" />
                   <span>선수 0.5초 길게 누르기 (부채꼴 상태 메뉴)</span>
                 </div>
-                <div className="grid grid-cols-4 gap-1.5 font-semibold">
-                  <div className="p-1.5 bg-amber-500/10 border border-amber-500/20 text-amber-300 rounded text-[11px] text-center">☕ 휴식</div>
-                  <div className="p-1.5 bg-indigo-500/10 border border-indigo-500/20 text-indigo-300 rounded text-[11px] text-center">🎓 레슨중</div>
-                  <div className="p-1.5 bg-rose-500/10 border border-rose-500/20 text-rose-300 rounded text-[11px] text-center">🚩 막판!</div>
-                  <div className="p-1.5 bg-slate-800 border border-slate-700 text-slate-300 rounded text-[11px] text-center">🚪 퇴장</div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                  <div className="p-2 bg-amber-500/10 border border-amber-500/20 rounded-lg">
+                    <strong className="text-amber-300">☕ 휴식:</strong> 배정 일시 제외 (복귀 시 대기 경기 수 자동 보정)
+                  </div>
+                  <div className="p-2 bg-indigo-500/10 border border-indigo-500/20 rounded-lg">
+                    <strong className="text-indigo-300">🎓 레슨중:</strong> 레슨 종료 시까지 대진 배정 제외
+                  </div>
+                  <div className="p-2 bg-rose-500/10 border border-rose-500/20 rounded-lg">
+                    <strong className="text-rose-300">🚩 막판!:</strong> 해당 경기 [완료] 즉시 자동 [퇴장] 전환
+                  </div>
+                  <div className="p-2 bg-slate-800/90 border border-slate-700 rounded-lg">
+                    <strong className="text-slate-200">🚪 퇴장:</strong> 귀가 처리 (배정 제외 · 대진 기록 보존)
+                  </div>
                 </div>
               </div>
             </div>
@@ -360,125 +363,108 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({ isOpen, onClose 
 
           {/* TAB 3: 게임 목록 */}
           {activeTab === 'games' && (
-            <div className="space-y-2.5 text-xs">
+            <div className="space-y-2">
               <div className="p-3 rounded-xl bg-slate-950/70 border border-slate-800 space-y-1">
                 <div className="font-bold text-emerald-400 flex items-center gap-1.5">
                   <Sparkles className="w-3.5 h-3.5" />
-                  <span>대기열 생성 &amp; 선택 선수 대기열 생성</span>
+                  <span>대기열 생성 &amp; 선택 인원 편성</span>
                 </div>
-                <p className="text-slate-300">
-                  • 상단 <strong>[자동 / 연속 / 남복 / 여복 / 혼복 / 참가순]</strong> 버튼에 설정된 매칭 옵션이 자동 반영됩니다.
-                  <br />
-                  • 하단 참가자 명단에서 선수를 터치하면 배너 전체 폭의 <strong>[선택한 n명으로 대기열 생성]</strong> 버튼이 나타나며, 버튼 외 다른 영역을 터치하면 선택이 해제됩니다.
-                </p>
+                <p>• <strong>상단 버튼:</strong> [자동 / 연속 / 남복 / 여복 / 혼복 / 참가순]으로 맞춤 대기열 생성</p>
+                <p>• <strong>선택 생성:</strong> 하단 명단에서 선수 터치 → <strong>[선택한 n명으로 대기열 생성]</strong> 클릭</p>
               </div>
 
               <div className="p-3 rounded-xl bg-slate-950/70 border border-slate-800 space-y-1">
                 <div className="font-bold text-amber-300 flex items-center gap-1.5">
                   <Plus className="w-3.5 h-3.5" />
-                  <span>[n코트] 발광 버튼 &amp; 왼쪽 꼬깔 연동</span>
+                  <span>[n코트] 배정 &amp; 1:1 선수 교체</span>
                 </div>
-                <ul className="text-slate-300 space-y-1 list-disc pl-4">
-                  <li><strong className="text-purple-300">n코트 왼쪽 꼬깔:</strong> 코트 현황의 꼬깔과 실시간 연동되며 터치하여 클럽 턴을 즉시 변경할 수 있습니다.</li>
-                  <li><strong className="text-emerald-400">초록 [n코트] (빈 코트):</strong> 터치 시 발광 → 대기열 <strong>[선택]</strong> 시 4명 선수 박스와 함께 즉시 투입</li>
-                  <li><strong className="text-rose-300">빨강 [n코트] (진행 중):</strong> 완료된 경기 선수 확인 후 다음 대기열 연속 배정</li>
-                  <li><strong className="text-slate-300">회색 [n코트] (타 클럽):</strong> 터치 시 다음 꼬깔로 회전 (우리클럽 전환 시 배정 안내)</li>
-                </ul>
-              </div>
-
-              <div className="p-3 rounded-xl bg-orange-500/10 border border-orange-500/30 space-y-1">
-                <div className="font-bold text-orange-300 flex items-center gap-1.5">
-                  <ShieldCheck className="w-3.5 h-3.5" />
-                  <span>선수 교체 &amp; 중복 선수 감지</span>
-                </div>
-                <p className="text-slate-200">
-                  • 대기열 선수를 터치하여 다른 선수와 1:1 교체할 수 있으며, <strong>[교체 취소]</strong> 버튼 또는 해당 선수를 다시 터치하면 해제됩니다.
-                  <br />
-                  • 타 코트 운동 중 선수 포함 시 투입 차단 / 좌측 핸들 드래그로 대기열 순서 변경
-                </p>
+                <p>• <strong className="text-emerald-400">초록 [n코트] (빈 코트):</strong> 터치 후 대기열 <strong>[선택]</strong> 시 즉시 코트 투입</p>
+                <p>• <strong className="text-rose-300">빨강 [n코트] (진행 중):</strong> 현재 경기 완료 처리 후 다음 대기열 연속 투입</p>
+                <p>• <strong className="text-orange-300">선수 교체 &amp; 순서 변경:</strong> 선수 터치로 1:1 교체 / 좌측 핸들 드래그로 대기열 순서 이동</p>
               </div>
             </div>
           )}
 
           {/* TAB 4: 참가자 관리 */}
           {activeTab === 'players' && (
-            <div className="space-y-2.5 text-xs">
+            <div className="space-y-2">
               <div className="p-3 rounded-xl bg-cyan-500/10 border border-cyan-500/30 space-y-1">
                 <div className="font-bold text-cyan-300 flex items-center gap-1.5">
                   <CheckSquare className="w-3.5 h-3.5" />
-                  <span>[일괄 등록] 출석체크 &amp; 오름차순 참가 순서 등록</span>
+                  <span>[출석체크] &amp; 오름차순 참가 등록</span>
                 </div>
-                <ul className="list-disc list-inside space-y-0.5 text-slate-200">
-                  <li><strong className="text-cyan-300">[출석체크] 체크 시:</strong> 일괄 등록된 선수는 이름에 <strong>반투명 빗금</strong>이 표시되고 <code className="text-cyan-300">[출석]</code> 버튼이 먼저 나타납니다.</li>
-                  <li><strong className="text-emerald-300">[출석] 버튼 터치:</strong> 클릭한 순서대로 <strong>1, 2, 3... 오름차순 참가 순서</strong>로 등록되며 <code className="text-amber-300">[🏸 콕제출]</code> 버튼으로 전환됩니다.</li>
-                  <li><strong className="text-amber-300">꼬깔확인 &amp; 미출석 분리:</strong> <code className="text-amber-300">[꼬깔확인]</code> 체크 시 출석 직후 꼬깔 번호 입력창이 열리며, 미출석(빗금) 선수는 코트 현황·게임 목록에서 제외됩니다.</li>
-                </ul>
+                <p>• <strong>[출석체크] 활성:</strong> 일괄 등록 시 미출석(빗금) 상태로 등록 (배정 제외)</p>
+                <p>• <strong>[출석] 터치:</strong> 누른 순서대로 1, 2, 3... 참가 순번 부여 후 <strong>[🏸 콕제출]</strong>로 전환</p>
               </div>
 
               <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 space-y-1">
                 <div className="font-bold text-emerald-300 flex items-center gap-1.5">
                   <ListPlus className="w-3.5 h-3.5" />
-                  <span>[일괄 등록] 띄어쓰기 간편 입력</span>
+                  <span>[참가자 일괄 등록] &amp; [전체 회원 관리]</span>
                 </div>
-                <ul className="list-disc list-inside space-y-0.5 text-slate-200">
-                  <li><strong className="text-purple-300">기존 회원:</strong> <code>홍길동, 김철수</code> (급수·성별 자동 매칭)</li>
-                  <li><strong className="text-amber-300">꼬깔 번호:</strong> <code>홍길동 12</code> (번호표 12번 함께 등록)</li>
-                  <li><strong className="text-emerald-300">신규 회원:</strong> <code>박지성 남 A</code>, <code>손흥민 7 남 S</code></li>
-                </ul>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                <div className="p-3 rounded-xl bg-slate-950/70 border border-slate-800 space-y-1">
-                  <div className="font-bold text-amber-300 flex items-center gap-1.5">
-                    <Hash className="w-3.5 h-3.5" />
-                    <span>꼬깔번호 &amp; 콕제출</span>
-                  </div>
-                  <p className="text-slate-300">[꼬깔확인]으로 번호 입력·표시 / [🏸 콕제출]로 제출 인원 집계</p>
-                </div>
-
-                <div className="p-3 rounded-xl bg-slate-950/70 border border-slate-800 space-y-1">
-                  <div className="font-bold text-purple-300 flex items-center gap-1.5">
-                    <ShieldCheck className="w-3.5 h-3.5" />
-                    <span>전체회원 .json 백업</span>
-                  </div>
-                  <p className="text-slate-300">[전체회원] → [기기 파일 저장]으로 명부 백업 및 복원</p>
-                </div>
+                <p>• <strong>상단 [일괄 등록하기]:</strong> 우측 상단(닫기 왼쪽) 버튼으로 즉시 등록 · 전체회원 자동 동기화</p>
+                <p>• <strong>간편 입력:</strong> <code>홍길동 12</code> (꼬깔 12번) / <code>박지성 남 A</code> (신규·참가 동시 등록)</p>
+                <p>• <strong>전체 회원 관리:</strong> 상단 <strong>[회원 직접 등록]</strong>, <strong>[테스트]</strong>(24명 생성), <strong>[.json 파일 백업/복원]</strong></p>
               </div>
             </div>
           )}
 
-          {/* TAB 5: 옵션 & 꿀팁 */}
+          {/* TAB 5: 기록 캘린더 & AM 04:00 자동 저장 */}
+          {activeTab === 'calendar' && (
+            <div className="space-y-2">
+              <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 space-y-1">
+                <div className="font-bold text-emerald-300 flex items-center gap-1.5">
+                  <Calendar className="w-3.5 h-3.5" />
+                  <span>기록 캘린더 (최근 1개월 보관)</span>
+                </div>
+                <p>• <strong>날짜 선택:</strong> 하단에 해당일의 <strong>코트 현황 · 게임 목록 · 참가자 명단 · 대진 기록</strong> 요약 표시</p>
+                <p>• <strong>[기록 열기]:</strong> 선택한 날짜의 운동 기록을 전 메뉴에서 열람·수정 (<strong>[오늘 운동으로 복귀]</strong> 지원)</p>
+                <p>• <strong>테스트 제외:</strong> [테스트]로 생성한 가상 선수 데이터는 캘린더 기록에서 자동 제외</p>
+              </div>
+
+              <div className="p-3 rounded-xl bg-slate-950/70 border border-slate-800 space-y-1">
+                <div className="font-bold text-amber-300 flex items-center gap-1.5">
+                  <Clock className="w-3.5 h-3.5" />
+                  <span>매일 AM 04:00 자동 저장 · 초기화</span>
+                </div>
+                <p>• <strong>전날 기록 저장:</strong> 전날 00:00시 이전 운동 기록만 전날 날짜로 자동 저장 (1개월 초과분 자동 삭제)</p>
+                <p>• <strong>자동 초기화:</strong> 일반 시간에 앱 실행 시 알림 없이 자동 처리 / 실제 04:00 사용 중일 때만 3분 알림 표시</p>
+                <p>• <strong>새벽 운동 보호:</strong> 당일 00:00 ~ 04:00 사이 첫 운동 시작 시 04:00 초기화 자동 면제</p>
+              </div>
+            </div>
+          )}
+
+          {/* TAB 6: 옵션 & 꿀팁 */}
           {activeTab === 'tips' && (
-            <div className="space-y-2.5 text-xs">
+            <div className="space-y-2">
               <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 space-y-1.5">
                 <div className="font-bold text-emerald-300 flex items-center gap-1.5">
                   <Scale className="w-3.5 h-3.5" />
-                  <span>⚖️ 4가지 복식 조편성 방식 &amp; 매칭 세부 옵션</span>
+                  <span>⚖️ 매칭 옵션 설정 (하단 고정 제어 바)</span>
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 text-slate-300">
-                  <div className="p-2 rounded-lg bg-slate-950/60 border border-slate-800"><strong className="text-emerald-300">• 실력 밸런스:</strong> 급수 균형 맞춤 편성</div>
-                  <div className="p-2 rounded-lg bg-slate-950/60 border border-slate-800"><strong className="text-amber-300">• 완전 랜덤:</strong> 급수 무관 무작위 추첨</div>
-                  <div className="p-2 rounded-lg bg-slate-950/60 border border-slate-800"><strong className="text-blue-300">• 복식 우선:</strong> 남복(4남)·여복(4여)만 편성</div>
-                  <div className="p-2 rounded-lg bg-slate-950/60 border border-slate-800"><strong className="text-pink-300">• 혼복 우선:</strong> 혼복(2남2여) 최우선 편성</div>
+                <div className="grid grid-cols-2 gap-1.5">
+                  <div className="p-2 rounded-lg bg-slate-950/60 border border-slate-800"><strong className="text-emerald-300">• 실력 밸런스:</strong> 급수 균형 편성</div>
+                  <div className="p-2 rounded-lg bg-slate-950/60 border border-slate-800"><strong className="text-amber-300">• 완전 랜덤:</strong> 무작위 추첨</div>
+                  <div className="p-2 rounded-lg bg-slate-950/60 border border-slate-800"><strong className="text-blue-300">• 복식 우선:</strong> 남복·여복 전용</div>
+                  <div className="p-2 rounded-lg bg-slate-950/60 border border-slate-800"><strong className="text-pink-300">• 혼복 우선:</strong> 2남2여 최우선</div>
                 </div>
-                <div className="pt-1 space-y-1 text-[11px] text-slate-300">
-                  <div>• <strong className="text-cyan-300">직전 경기 휴식자 우선 출전 (연속 대기 방지):</strong> 쉬고 있는 대기 인원을 우선 배정하여 연속 대기를 방지합니다.</div>
-                  <div>• <strong className="text-purple-300">이전 배정 경기와 중복 방지:</strong> 직전 배정된 경기의 4명 중 2명 이상이 다시 같은 경기에 겹치지 않도록 편성합니다.</div>
-                </div>
+                <p className="text-[11px] pt-0.5">
+                  • <strong>휴식자 우선 출전 · 이전 경기 중복 방지</strong> 체크 지원 / 하단 <strong>[초기화 · 소리 · 취소 · 저장]</strong> 고정 바
+                </p>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
                 <div className="p-2.5 rounded-xl bg-slate-950/70 border border-slate-800">
-                  <strong className="text-amber-300">⏱️ 지각 20분 보정:</strong> 첫 배정 20분 뒤 등록·출석 선수의 연속 배정 독점 방지
+                  <strong className="text-amber-300">⏱️ 지각 20분 보정:</strong> 지각 등록·출석 선수의 연속 배정 방지
                 </div>
                 <div className="p-2.5 rounded-xl bg-slate-950/70 border border-slate-800">
-                  <strong className="text-pink-400">💗 고정 파트너:</strong> 지정한 두 선수를 같은 코트/팀 우선 배정
+                  <strong className="text-pink-400 inline-flex items-center gap-1 align-middle"><CrossedRacketsIcon className="w-3.5 h-3.5 text-pink-400 shrink-0" />파트너 설정:</strong> 지정한 두 선수를 같은 팀 우선 배정
                 </div>
                 <div className="p-2.5 rounded-xl bg-slate-950/70 border border-slate-800">
-                  <strong className="text-blue-300">🖥️ 화면 &amp; 효과음:</strong> 상단 전체화면 전환 및 타구음/휘슬 ON·OFF
+                  <strong className="text-blue-300">🖥️ 화면 &amp; 효과음:</strong> 상단 전체화면 및 효과음 ON·OFF
                 </div>
                 <div className="p-2.5 rounded-xl bg-slate-950/70 border border-slate-800">
-                  <strong className="text-purple-300">🧪 안전한 초기화:</strong> [초기화] 시에도 [전체회원] 명부는 영구 보존
+                  <strong className="text-purple-300">🛡️ 영구 보존:</strong> 초기화 시에도 [전체회원] · [기록 캘린더] 보존
                 </div>
               </div>
             </div>

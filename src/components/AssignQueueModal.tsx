@@ -4,7 +4,7 @@ import { X, Play, Clock, Sparkles, Users, AlertTriangle, Flag, Coffee, Graduatio
 import { PartnerDot } from './PartnerDot';
 import { DragScrollContainer } from './DragScrollContainer';
 import { soundEffects } from '../utils/audio';
-import { generateSingleCourtMatch } from '../utils/matchmaker';
+import { generateSingleCourtMatch, isSpecialMatchTurnReady } from '../utils/matchmaker';
 
 interface AssignQueueModalProps {
   isOpen: boolean;
@@ -41,8 +41,24 @@ export const AssignQueueModal: React.FC<AssignQueueModalProps> = ({
 
   const displayCourtName = formatCourtName(extractCourtNumberLabel(courtName, courtNumber));
 
-  // 대기열의 1번부터 최대 5번째 경기까지 추출
-  const candidateMatches = queuedMatches.slice(0, 5);
+  const rosterForSpecial = useMemo(
+    () =>
+      (allPlayers.length > 0 ? allPlayers : Array.from(playersMap.values())).filter(
+        (p) => !p.attendancePending
+      ),
+    [allPlayers, playersMap]
+  );
+
+  // 대기열에 정렬된 대기순서 그대로 일반 대기 경기 및 투입 차례가 도래한 스페셜 경기를 후보로 추출 (차례가 안 된 스페셜 대기 경기는 제외)
+  const candidateMatches = useMemo(() => {
+    return queuedMatches
+      .filter(
+        (m) =>
+          !m.isSpecialMatch ||
+          isSpecialMatchTurnReady(m, rosterForSpecial, activeMatches, queuedMatches, options)
+      )
+      .slice(0, 5);
+  }, [queuedMatches, rosterForSpecial, activeMatches, options]);
 
   const expectedMatchPreview = useMemo(() => {
     if (!options || candidateMatches.length > 0) return null;
@@ -310,6 +326,7 @@ export const AssignQueueModal: React.FC<AssignQueueModalProps> = ({
 
               {candidateMatches.map((match, idx) => {
                 const matchOrder = idx + 1;
+                const isSpecial = Boolean(match.isSpecialMatch);
                 const p1 = playersMap.get(match.teamA.player1Id);
                 const p2 = playersMap.get(match.teamA.player2Id);
                 const p3 = playersMap.get(match.teamB.player1Id);
@@ -322,16 +339,28 @@ export const AssignQueueModal: React.FC<AssignQueueModalProps> = ({
                 return (
                   <div
                     key={match.id}
-                    className="p-2.5 sm:p-3 rounded-xl border border-slate-800 bg-slate-950/60 hover:border-slate-700 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 shadow-sm w-full"
+                    className={`p-2.5 sm:p-3 rounded-xl border transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 shadow-sm w-full ${
+                      isSpecial
+                        ? 'animate-rainbow-aurora-card'
+                        : 'border-slate-800 bg-slate-950/60 hover:border-slate-700'
+                    }`}
                   >
                     {/* Left: Match Info & Players */}
                     <div className="space-y-1.5 min-w-0 w-fit mx-auto sm:mx-0">
-                      {hasDuplicatePlayer && (
-                        <div className="flex items-center justify-center sm:justify-start gap-2">
-                          <span className="inline-flex items-center gap-1 text-[10px] text-orange-400 font-semibold bg-orange-500/10 border border-orange-500/25 px-1.5 py-0.5 rounded">
-                            <AlertTriangle className="w-3 h-3 text-orange-400" />
-                            타 코트 배정자 포함
-                          </span>
+                      {(isSpecial || hasDuplicatePlayer) && (
+                        <div className="flex items-center justify-center sm:justify-start gap-2 flex-wrap">
+                          {isSpecial && (
+                            <span className="inline-flex items-center gap-1 text-[10px] text-white font-black bg-slate-950/60 border border-white/30 px-2 py-0.5 rounded-full">
+                              <Sparkles className="w-3 h-3 text-amber-200 animate-spin" style={{ animationDuration: '5s' }} />
+                              <span>스페셜 대기 경기 (출전 차례 도착)</span>
+                            </span>
+                          )}
+                          {hasDuplicatePlayer && (
+                            <span className="inline-flex items-center gap-1 text-[10px] text-orange-400 font-semibold bg-orange-500/10 border border-orange-500/25 px-1.5 py-0.5 rounded">
+                              <AlertTriangle className="w-3 h-3 text-orange-400" />
+                              타 코트 배정자 포함
+                            </span>
+                          )}
                         </div>
                       )}
 
@@ -354,11 +383,19 @@ export const AssignQueueModal: React.FC<AssignQueueModalProps> = ({
                       <button
                         type="button"
                         onClick={() => handleSelect(match.id)}
-                        className="w-full sm:w-auto px-3 py-1.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs rounded-xl flex items-center justify-center gap-1 transition-all shadow-md shadow-emerald-500/20 active:scale-95 cursor-pointer whitespace-nowrap"
-                        title={`#${matchOrder} 경기를 ${displayCourtName}에 배정합니다`}
+                        className={`w-full sm:w-auto px-3 py-1.5 font-bold text-xs rounded-xl flex items-center justify-center gap-1 transition-all active:scale-95 cursor-pointer whitespace-nowrap ${
+                          isSpecial
+                            ? 'animate-rainbow-aurora-btn text-white font-black'
+                            : 'bg-emerald-500 hover:bg-emerald-400 text-slate-950 shadow-md shadow-emerald-500/20'
+                        }`}
+                        title={
+                          isSpecial
+                            ? `스페셜 경기를 ${displayCourtName}에 즉시 투입합니다`
+                            : `#${matchOrder} 경기를 ${displayCourtName}에 배정합니다`
+                        }
                       >
                         <Play className="w-3 h-3 fill-current" />
-                        <span>이 코트에 배정</span>
+                        <span>{isSpecial ? '스페셜 경기 즉시 투입' : '이 코트에 배정'}</span>
                       </button>
                     </div>
                   </div>

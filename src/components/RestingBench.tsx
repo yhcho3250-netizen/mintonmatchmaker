@@ -19,6 +19,7 @@ import {
   isLateRegisteredPlayer,
   getPlayerRegistrationTime,
   getPlayerWaitingMinutes,
+  isSpecialMatchTurnReady,
 } from '../utils/matchmaker';
 
 interface RestingBenchProps {
@@ -153,8 +154,15 @@ export const RestingBench: React.FC<RestingBenchProps> = ({
   const playerCourtOffsetMap = useMemo(() => {
     const map = new Map<string, { offset: number; isQueued: boolean }>();
 
-    // 1. 이미 다음 대기열 경기에 편성되어 있는 선수들 (1번 경기 -> 1코트 뒤, 2번 경기 -> 2코트 뒤...)
-    queuedMatches.forEach((match, matchIdx) => {
+    // 1. 이미 다음 대기열 경기에 편성되어 있는 선수들 (출전 가능한 스페셜 1순위 및 일반 대기열: 1번 경기 -> 1코트 뒤, 2번 경기 -> 2코트 뒤...)
+    const roster = allPlayers && allPlayers.length > 0 ? allPlayers : restingPlayers;
+    const normalQueuedMatches = queuedMatches.filter((m) => !m.isSpecialMatch);
+    const deployableQueuedMatches = queuedMatches.filter(
+      (m) =>
+        !m.isSpecialMatch ||
+        isSpecialMatchTurnReady(m, roster, activeMatches, queuedMatches, options)
+    );
+    deployableQueuedMatches.forEach((match, matchIdx) => {
       [
         match.teamA.player1Id,
         match.teamA.player2Id,
@@ -168,7 +176,6 @@ export const RestingBench: React.FC<RestingBenchProps> = ({
     });
 
     // 2. 대기열에 아직 배정되지 않은 휴식자들의 우선순위 정렬 (휴식중/레슨중/퇴장!은 배정 대상 제외)
-    const roster = allPlayers && allPlayers.length > 0 ? allPlayers : restingPlayers;
     const rawAssignedMap: Record<string, number> = {};
     const recentOrActiveIds = new Set<string>();
     activeMatches.forEach((m) => {
@@ -180,7 +187,7 @@ export const RestingBench: React.FC<RestingBenchProps> = ({
     });
     roster.forEach((p) => {
       const inCourt = recentOrActiveIds.has(p.id) ? 1 : 0;
-      const inQueue = queuedMatches.filter(
+      const inQueue = normalQueuedMatches.filter(
         (m) =>
           m.teamA.player1Id === p.id ||
           m.teamA.player2Id === p.id ||

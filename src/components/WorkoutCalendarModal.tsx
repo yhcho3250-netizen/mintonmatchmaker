@@ -9,7 +9,6 @@ import {
   Layers,
   History,
   LayoutGrid,
-  Clock,
   CheckCircle2,
   ArrowRightCircle,
 } from 'lucide-react';
@@ -223,78 +222,58 @@ export const WorkoutCalendarModal: React.FC<WorkoutCalendarModalProps> = ({
           </div>
         </div>
 
-        {/* Status Banner: 현재 켜져 있는 운동 기록 안내 */}
-        <div
-          className={`px-4 sm:px-5 py-2 border-b flex flex-col items-start sm:flex-row sm:items-center sm:justify-between gap-1 sm:gap-2 text-xs shrink-0 ${
-            viewingWorkoutDate
-              ? 'bg-amber-500/15 border-amber-500/30 text-amber-200'
-              : 'bg-emerald-500/10 border-slate-800 text-slate-300'
-          }`}
-        >
-          <div className="flex items-center gap-1.5 min-w-0">
-            <CheckCircle2
-              className={`w-3.5 h-3.5 shrink-0 ${
-                viewingWorkoutDate ? 'text-amber-400' : 'text-emerald-400'
-              }`}
-            />
-            {viewingWorkoutDate ? (
-              <span className="font-semibold">
-                <strong className="text-amber-300 font-extrabold">{formatKoreanDateLabel(viewingWorkoutDate)}</strong> 기록 열람 중
-              </span>
-            ) : (
-              <span className="font-medium">
-                <strong className="text-emerald-300 font-bold">오늘 ({formatKoreanDateLabel(todayDateKey)})</strong> 기록 실시간 저장 중
-              </span>
-            )}
+        {/* Status Banner: 과거 운동 기록 열람 중일 때만 표시 (오늘 기록 실시간 저장 중 및 AM 04:00 자동 저장 · 1개월 보관 문구 숨김) */}
+        {viewingWorkoutDate && (
+          <div className="px-4 sm:px-5 py-2 border-b bg-amber-500/15 border-amber-500/30 text-amber-200 flex items-center gap-1.5 text-xs shrink-0">
+            <CheckCircle2 className="w-3.5 h-3.5 shrink-0 text-amber-400" />
+            <span className="font-semibold">
+              <strong className="text-amber-300 font-extrabold">{formatKoreanDateLabel(viewingWorkoutDate)}</strong> 기록 열람 중
+            </span>
+          </div>
+        )}
+
+        {/* Fixed Month Selector Banner (상단 아래 고정 배너) */}
+        <div className="px-4 sm:px-6 py-2.5 bg-slate-900/95 border-b border-slate-800 flex items-center justify-between gap-2 shrink-0">
+          <button
+            type="button"
+            onClick={handlePrevMonth}
+            disabled={!canGoPrevMonth}
+            className={`p-1.5 rounded-lg border transition-all flex items-center justify-center ${
+              canGoPrevMonth
+                ? 'bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700 cursor-pointer active:scale-95'
+                : 'bg-slate-900/40 text-slate-600 border-slate-800/60 cursor-not-allowed'
+            }`}
+            title="이전 달 보기 (최근 1개월 내)"
+          >
+            <ChevronLeft className="w-4 h-4" />
+          </button>
+
+          <div className="text-center">
+            <div className="text-sm sm:text-base font-extrabold text-white">
+              {viewYear}년 {viewMonth + 1}월
+            </div>
+            <div className="text-[10px] sm:text-[11px] text-slate-400 font-mono">
+              {cutoffDateKey} ~ {todayDateKey}
+            </div>
           </div>
 
-          <div className="text-[11px] text-slate-400 flex items-center gap-1.5 sm:ml-auto shrink-0">
-            <Clock className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
-            <span>AM 04:00 자동 저장 · 1개월 보관</span>
-          </div>
+          <button
+            type="button"
+            onClick={handleNextMonth}
+            disabled={!canGoNextMonth}
+            className={`p-1.5 rounded-lg border transition-all flex items-center justify-center ${
+              canGoNextMonth
+                ? 'bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700 cursor-pointer active:scale-95'
+                : 'bg-slate-900/40 text-slate-600 border-slate-800/60 cursor-not-allowed'
+            }`}
+            title="다음 달 보기"
+          >
+            <ChevronRight className="w-4 h-4" />
+          </button>
         </div>
 
         {/* Calendar Body */}
         <div className="p-3.5 sm:p-5 overflow-y-auto space-y-4 flex-1">
-          {/* Month Selector & Retention Range Info */}
-          <div className="flex items-center justify-between gap-2 bg-slate-950/70 px-3.5 py-2.5 rounded-xl border border-slate-800">
-            <button
-              type="button"
-              onClick={handlePrevMonth}
-              disabled={!canGoPrevMonth}
-              className={`p-1.5 rounded-lg border transition-all flex items-center justify-center ${
-                canGoPrevMonth
-                  ? 'bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700 cursor-pointer active:scale-95'
-                  : 'bg-slate-900/40 text-slate-600 border-slate-800/60 cursor-not-allowed'
-              }`}
-              title="이전 달 보기 (최근 1개월 내)"
-            >
-              <ChevronLeft className="w-4 h-4" />
-            </button>
-
-            <div className="text-center">
-              <div className="text-sm sm:text-base font-extrabold text-white">
-                {viewYear}년 {viewMonth + 1}월
-              </div>
-              <div className="text-[10px] sm:text-[11px] text-slate-400 font-mono">
-                {cutoffDateKey} ~ {todayDateKey}
-              </div>
-            </div>
-
-            <button
-              type="button"
-              onClick={handleNextMonth}
-              disabled={!canGoNextMonth}
-              className={`p-1.5 rounded-lg border transition-all flex items-center justify-center ${
-                canGoNextMonth
-                  ? 'bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700 cursor-pointer active:scale-95'
-                  : 'bg-slate-900/40 text-slate-600 border-slate-800/60 cursor-not-allowed'
-              }`}
-              title="다음 달 보기"
-            >
-              <ChevronRight className="w-4 h-4" />
-            </button>
-          </div>
 
           {/* Weekday Headers */}
           <div className="grid grid-cols-7 gap-1 sm:gap-1.5 text-center text-[11px] font-bold">

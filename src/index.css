@@ -117,33 +117,97 @@ textarea {
   }
 }
 
-/* 참가자 0명일 때 [참가자 명단] 메뉴 버튼의 문구와 아이콘(이미지)만 발광(Glow)하는 효과 (박스 테두리/배경 발광 제외) */
-@keyframes emptyPlayersIconGlow {
-  0%, 100% {
-    color: #34d399;
-    filter: drop-shadow(0 0 5px rgba(52, 211, 153, 0.75)) drop-shadow(0 0 10px rgba(16, 185, 129, 0.5));
+
+/* 스페셜 게임 차례 도달 시 무지개 오로라(Rainbow Aurora) 애니메이션 */
+@keyframes rainbowAuroraWave {
+  0% {
+    background-position: 0% 50%;
+    box-shadow:
+      0 0 14px rgba(255, 77, 109, 0.55),
+      0 0 26px rgba(46, 196, 182, 0.4),
+      inset 0 0 12px rgba(131, 56, 236, 0.35);
+    border-color: rgba(255, 158, 0, 0.9);
+  }
+  25% {
+    background-position: 50% 100%;
+    box-shadow:
+      0 0 16px rgba(255, 214, 10, 0.6),
+      0 0 28px rgba(58, 134, 255, 0.45),
+      inset 0 0 14px rgba(46, 196, 182, 0.4);
+    border-color: rgba(46, 196, 182, 0.95);
   }
   50% {
-    color: #ecfdf5;
-    filter: drop-shadow(0 0 10px rgba(52, 211, 153, 1)) drop-shadow(0 0 20px rgba(16, 185, 129, 0.95));
+    background-position: 100% 50%;
+    box-shadow:
+      0 0 18px rgba(46, 196, 182, 0.65),
+      0 0 32px rgba(131, 56, 236, 0.55),
+      inset 0 0 16px rgba(255, 0, 127, 0.35);
+    border-color: rgba(168, 85, 247, 0.95);
+  }
+  75% {
+    background-position: 50% 0%;
+    box-shadow:
+      0 0 16px rgba(58, 134, 255, 0.6),
+      0 0 28px rgba(255, 77, 109, 0.5),
+      inset 0 0 14px rgba(255, 214, 10, 0.35);
+    border-color: rgba(46, 196, 182, 0.9);
+  }
+  100% {
+    background-position: 0% 50%;
+    box-shadow:
+      0 0 14px rgba(255, 77, 109, 0.55),
+      0 0 26px rgba(46, 196, 182, 0.4),
+      inset 0 0 12px rgba(131, 56, 236, 0.35);
+    border-color: rgba(255, 158, 0, 0.9);
   }
 }
 
-@keyframes emptyPlayersTextGlow {
-  0%, 100% {
-    color: #34d399;
-    text-shadow: 0 0 6px rgba(52, 211, 153, 0.75), 0 0 12px rgba(16, 185, 129, 0.5);
+@keyframes rainbowAuroraButtonShift {
+  0% {
+    background-position: 0% 50%;
+    box-shadow: 0 0 14px rgba(255, 77, 109, 0.55), 0 0 24px rgba(58, 134, 255, 0.4);
   }
   50% {
-    color: #ecfdf5;
-    text-shadow: 0 0 10px rgba(52, 211, 153, 1), 0 0 20px rgba(16, 185, 129, 0.95);
+    background-position: 100% 50%;
+    box-shadow: 0 0 18px rgba(46, 196, 182, 0.65), 0 0 28px rgba(168, 85, 247, 0.55);
+  }
+  100% {
+    background-position: 0% 50%;
+    box-shadow: 0 0 14px rgba(255, 77, 109, 0.55), 0 0 24px rgba(58, 134, 255, 0.4);
   }
 }
 
-.animate-empty-players-icon {
-  animation: emptyPlayersIconGlow 1.15s ease-in-out infinite !important;
+.animate-rainbow-aurora-card {
+  background: linear-gradient(
+    125deg,
+    rgba(244, 63, 94, 0.32),
+    rgba(245, 158, 11, 0.3),
+    rgba(16, 185, 129, 0.32),
+    rgba(6, 182, 212, 0.32),
+    rgba(99, 102, 241, 0.35),
+    rgba(217, 70, 239, 0.34),
+    rgba(244, 63, 94, 0.32)
+  ) !important;
+  background-size: 300% 300% !important;
+  animation: rainbowAuroraWave 3.6s ease infinite !important;
+  border-width: 1.5px !important;
 }
 
-.animate-empty-players-text {
-  animation: emptyPlayersTextGlow 1.15s ease-in-out infinite !important;
+.animate-rainbow-aurora-btn {
+  background: linear-gradient(
+    90deg,
+    #f43f5e,
+    #f59e0b,
+    #10b981,
+    #06b6d4,
+    #6366f1,
+    #d946ef,
+    #f43f5e
+  ) !important;
+  background-size: 250% 250% !important;
+  animation: rainbowAuroraButtonShift 3s linear infinite !important;
+  color: #ffffff !important;
+  text-shadow: 0 1px 3px rgba(2, 6, 23, 0.85) !important;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.45) !important;
 }
+

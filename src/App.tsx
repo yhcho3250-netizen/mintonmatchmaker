@@ -16,6 +16,7 @@ import {
   revertConeToTarget,
   rotateQueueToFirstRedCone,
   isPlayerLastMatchCompleted,
+  keepSpecialMatchesAtBottom,
 } from './types';
 import { INITIAL_SAMPLE_PLAYERS } from './utils/sampleData';
 import {
@@ -25,6 +26,9 @@ import {
   createDoublesMatchFromSelected,
   recordCompletedMatch,
   createQueuedMatchesFromSelectedPlayers,
+  createSpecialMatchFromSelectedPlayers,
+  isSpecialMatchTurnReady,
+  orderQueuedMatchesWithSpecial,
   generateSpecificTypeQueuedMatch,
   generateQueueMatchesByArrivalOrder,
   computePartnerHistoryFromHistory,
@@ -57,6 +61,8 @@ import {
   getYesterdayDateKey,
   getLatestFourAmBoundaryKey,
   getArchiveDateForBoundaryKey,
+  getFourAmTimestampForBoundaryKey,
+  didWorkoutStartAfterFourAmBoundary,
   loadWorkoutRecords,
   saveWorkoutRecords,
   upsertDailyWorkoutRecord,
@@ -87,6 +93,7 @@ import {
   loadMasterMembersFromStorage,
   saveMasterMembersToStorage,
   syncPlayersAndMasterMembers,
+  reconcilePlayersWithMasterMembers,
   isTestPlayer,
 } from './utils/masterMemberStorage';
 import {
@@ -282,6 +289,7 @@ export default function App() {
     return Boolean(loaded.modalExpiresAt && loaded.modalExpiresAt > Date.now());
   });
   const [fourAmRemainingSeconds, setFourAmRemainingSeconds] = useState<number>(180);
+  const lastObservedBoundaryKeyRef = useRef<string>(getLatestFourAmBoundaryKey(new Date()));
 
   // Sync to Device Internal Local Storage
   useEffect(() => {
@@ -388,26 +396,54 @@ export default function App() {
     return loadArchivedPlayers();
   });
 
+  const justRestoredBackupRef = useRef<boolean>(false);
+
   // 기기 내부 로컬 저장소(IndexedDB + OPFS 파일 시스템) 초기화 및 자동 복원 구독
   useEffect(() => {
     const applyRestoredData = (restoredKeys: Record<string, string>) => {
-      if (restoredKeys[DEVICE_STORAGE_KEYS.MASTER_MEMBERS]) {
+      justRestoredBackupRef.current = true;
+
+      let restoredMembersList: MasterMember[] | null = null;
+      if (DEVICE_STORAGE_KEYS.MASTER_MEMBERS in restoredKeys) {
         try {
           const parsed = JSON.parse(restoredKeys[DEVICE_STORAGE_KEYS.MASTER_MEMBERS]);
-          if (Array.isArray(parsed)) setMasterMembers(parsed);
+          if (Array.isArray(parsed)) {
+            restoredMembersList = parsed;
+            setMasterMembers(parsed);
+          }
         } catch {
           // ignore
         }
       }
-      if (restoredKeys[LOCAL_STORAGE_KEY_PLAYERS]) {
+
+      if (LOCAL_STORAGE_KEY_PLAYERS in restoredKeys) {
         try {
           const parsed = JSON.parse(restoredKeys[LOCAL_STORAGE_KEY_PLAYERS]);
-          if (Array.isArray(parsed)) setPlayers(parsed);
+          if (Array.isArray(parsed)) {
+            const finalPlayers =
+              restoredMembersList && restoredMembersList.length > 0
+                ? reconcilePlayersWithMasterMembers(parsed, restoredMembersList).updatedPlayers
+                : parsed;
+            setPlayers(finalPlayers);
+            if (finalPlayers !== parsed) {
+              setDeviceStorageItem(LOCAL_STORAGE_KEY_PLAYERS, JSON.stringify(finalPlayers));
+            }
+          }
         } catch {
           // ignore
         }
+      } else if (restoredMembersList && restoredMembersList.length > 0) {
+        const membersToSync = restoredMembersList;
+        setPlayers((prev) => {
+          const { updatedPlayers, hasChanges } = reconcilePlayersWithMasterMembers(
+            prev,
+            membersToSync
+          );
+          return hasChanges ? updatedPlayers : prev;
+        });
       }
-      if (restoredKeys[LOCAL_STORAGE_KEY_COURTS]) {
+
+      if (LOCAL_STORAGE_KEY_COURTS in restoredKeys) {
         try {
           const parsed = JSON.parse(restoredKeys[LOCAL_STORAGE_KEY_COURTS]);
           if (Array.isArray(parsed)) {
@@ -426,7 +462,7 @@ export default function App() {
           // ignore
         }
       }
-      if (restoredKeys[LOCAL_STORAGE_KEY_MATCHES]) {
+      if (LOCAL_STORAGE_KEY_MATCHES in restoredKeys) {
         try {
           const parsed = JSON.parse(restoredKeys[LOCAL_STORAGE_KEY_MATCHES]);
           if (Array.isArray(parsed)) setActiveMatches(parsed);
@@ -434,7 +470,7 @@ export default function App() {
           // ignore
         }
       }
-      if (restoredKeys[LOCAL_STORAGE_KEY_QUEUED]) {
+      if (LOCAL_STORAGE_KEY_QUEUED in restoredKeys) {
         try {
           const parsed = JSON.parse(restoredKeys[LOCAL_STORAGE_KEY_QUEUED]);
           if (Array.isArray(parsed)) setQueuedMatches(parsed);
@@ -442,7 +478,7 @@ export default function App() {
           // ignore
         }
       }
-      if (restoredKeys[LOCAL_STORAGE_KEY_HISTORY]) {
+      if (LOCAL_STORAGE_KEY_HISTORY in restoredKeys) {
         try {
           const parsed = JSON.parse(restoredKeys[LOCAL_STORAGE_KEY_HISTORY]);
           if (Array.isArray(parsed)) setRoundHistory(parsed);
@@ -450,7 +486,7 @@ export default function App() {
           // ignore
         }
       }
-      if (restoredKeys[LOCAL_STORAGE_KEY_OPTIONS]) {
+      if (LOCAL_STORAGE_KEY_OPTIONS in restoredKeys) {
         try {
           const parsed = JSON.parse(restoredKeys[LOCAL_STORAGE_KEY_OPTIONS]);
           if (parsed && typeof parsed === 'object') {
@@ -463,29 +499,77 @@ export default function App() {
           // ignore
         }
       }
-      if (restoredKeys[LOCAL_STORAGE_KEY_NAME]) {
+      if (LOCAL_STORAGE_KEY_NAME in restoredKeys && restoredKeys[LOCAL_STORAGE_KEY_NAME]) {
         setMeetupName(restoredKeys[LOCAL_STORAGE_KEY_NAME]);
       }
-      if (restoredKeys[LOCAL_STORAGE_KEY_ARCHIVED_PLAYERS]) {
+      if (LOCAL_STORAGE_KEY_ARCHIVED_PLAYERS in restoredKeys) {
         try {
           const parsed = JSON.parse(restoredKeys[LOCAL_STORAGE_KEY_ARCHIVED_PLAYERS]);
-          if (parsed && typeof parsed === 'object') setArchivedPlayers(parsed);
+          if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+            if (restoredMembersList && restoredMembersList.length > 0) {
+              const archiveList = Object.values(parsed as Record<string, Player>);
+              const { updatedPlayers, hasChanges } = reconcilePlayersWithMasterMembers(
+                archiveList,
+                restoredMembersList
+              );
+              if (hasChanges) {
+                const nextArchive: Record<string, Player> = {};
+                updatedPlayers.forEach((p) => {
+                  nextArchive[p.id] = p;
+                });
+                saveArchivedPlayersToStorage(nextArchive);
+                setArchivedPlayers(nextArchive);
+              } else {
+                setArchivedPlayers(parsed);
+              }
+            } else {
+              setArchivedPlayers(parsed);
+            }
+          }
         } catch {
           // ignore
         }
+      } else if (restoredMembersList && restoredMembersList.length > 0) {
+        const membersToSync = restoredMembersList;
+        setArchivedPlayers((prev) => {
+          const archiveList = Object.values(prev);
+          const { updatedPlayers, hasChanges } = reconcilePlayersWithMasterMembers(
+            archiveList,
+            membersToSync
+          );
+          if (!hasChanges) return prev;
+          const nextArchive: Record<string, Player> = {};
+          updatedPlayers.forEach((p) => {
+            nextArchive[p.id] = p;
+          });
+          saveArchivedPlayersToStorage(nextArchive);
+          return nextArchive;
+        });
       }
-      if (restoredKeys[DEVICE_STORAGE_KEYS.WORKOUT_RECORDS]) {
+
+      if (DEVICE_STORAGE_KEYS.WORKOUT_RECORDS in restoredKeys) {
         setWorkoutRecords(loadWorkoutRecords());
       }
-      if (restoredKeys[DEVICE_STORAGE_KEYS.VIEWING_WORKOUT_DATE]) {
+      if (DEVICE_STORAGE_KEYS.VIEWING_WORKOUT_DATE in restoredKeys) {
         setViewingWorkoutDate(loadViewingWorkoutDate());
       }
-      if (restoredKeys[DEVICE_STORAGE_KEYS.FOUR_AM_STATE]) {
+      if (DEVICE_STORAGE_KEYS.FOUR_AM_STATE in restoredKeys) {
         const loadedFourAm = loadFourAmState();
         setFourAmState(loadedFourAm);
         setIsFourAmModalOpen(
           Boolean(loadedFourAm.modalExpiresAt && loadedFourAm.modalExpiresAt > Date.now())
         );
+      }
+
+      if (
+        LOCAL_STORAGE_KEY_PLAYERS in restoredKeys ||
+        LOCAL_STORAGE_KEY_MATCHES in restoredKeys ||
+        LOCAL_STORAGE_KEY_QUEUED in restoredKeys
+      ) {
+        setSelectedSwap(null);
+        setSelectedBenchPlayerIds([]);
+        setGameListSwapSelection(null);
+        setConflictMatchTargetCourts({});
       }
     };
 
@@ -504,6 +588,8 @@ export default function App() {
     const isZeroToFourWindow = now.getHours() >= 0 && now.getHours() < 4;
     const targetDateKey = viewingWorkoutDate || todayDateKey;
     const hydrated = isDeviceStorageHydrated();
+    const preserveRestoredRecord = !hydrated || justRestoredBackupRef.current;
+    justRestoredBackupRef.current = false;
 
     const currentSnapshot: DailyWorkoutRecord = {
       date: targetDateKey,
@@ -606,12 +692,22 @@ export default function App() {
 
       // 3) 현재 운동 기록은 당일(todayDateKey) 운동 기록에 실시간 동기화 저장
       updated = upsertDailyWorkoutRecord(todayDateKey, currentSnapshot, {
-        preserveExistingIfEmpty: !hydrated,
-        removeIfEmpty: true,
+        preserveExistingIfEmpty: preserveRestoredRecord,
+        removeIfEmpty: !preserveRestoredRecord,
         now,
       });
       savePreMidnightRecord(todayDateKey, currentSnapshot, now);
       setWorkoutRecords(updated);
+      return;
+    }
+
+    // 아직 오전 04:00 경계 전환(전날 기록 분리 및 초기화)이 처리되지 않은 상태에서 앱을 켠 경우,
+    // 전날 잔여 데이터가 오늘(todayDateKey) 운동 기록으로 잘못 저장되지 않도록 보호
+    const currentBoundaryKey = getLatestFourAmBoundaryKey(now);
+    if (
+      fourAmState.lastCompletedBoundaryKey !== currentBoundaryKey &&
+      !didWorkoutStartAfterFourAmBoundary(currentSnapshot, currentBoundaryKey)
+    ) {
       return;
     }
 
@@ -665,11 +761,13 @@ export default function App() {
 
     // 일반 시간대 (04:00 ~ 23:59:59): 당일 운동 기록으로 모든 메뉴의 수정사항 실시간 동기화 저장
     const updated = upsertDailyWorkoutRecord(todayDateKey, currentSnapshot, {
-      preserveExistingIfEmpty: !hydrated,
-      removeIfEmpty: true,
+      preserveExistingIfEmpty: preserveRestoredRecord,
+      removeIfEmpty: !preserveRestoredRecord,
       now,
     });
-    savePreMidnightRecord(todayDateKey, currentSnapshot, now);
+    if (isWorkoutSnapshotNonEmpty(currentSnapshot) || !preserveRestoredRecord) {
+      savePreMidnightRecord(todayDateKey, currentSnapshot, now);
+    }
     setWorkoutRecords(updated);
   }, [
     players,
@@ -833,6 +931,96 @@ export default function App() {
             archivedPlayers: nextStashArchived,
           });
         }
+      }
+
+      // 4. 최근 1개월 운동 기록(workoutRecords) 내부 선수 및 대진 기록 스냅샷도 함께 동기화
+      const currentWorkoutMap = loadWorkoutRecords();
+      let workoutMapChanged = false;
+      const nextWorkoutMap: Record<string, DailyWorkoutRecord> = { ...currentWorkoutMap };
+
+      Object.keys(nextWorkoutMap).forEach((dateKey) => {
+        const rec = nextWorkoutMap[dateKey];
+        if (!rec) return;
+        let recChanged = false;
+
+        const nextRecPlayers = (rec.players || []).map((p) => {
+          if (!isTestPlayer(p) && matchesTargetMember(p)) {
+            recChanged = true;
+            return {
+              ...p,
+              name: updatedMember.name,
+              gender: updatedMember.gender,
+              tier: updatedMember.tier,
+              masterMemberId: updatedMember.id,
+            };
+          }
+          return p;
+        });
+
+        const nextRecArchived = { ...(rec.archivedPlayers || {}) };
+        Object.keys(nextRecArchived).forEach((pid) => {
+          const p = nextRecArchived[pid];
+          if (p && !isTestPlayer(p) && matchesTargetMember(p)) {
+            nextRecArchived[pid] = {
+              ...p,
+              name: updatedMember.name,
+              gender: updatedMember.gender,
+              tier: updatedMember.tier,
+              masterMemberId: updatedMember.id,
+            };
+            recChanged = true;
+          }
+        });
+
+        const nextRecHistory = (rec.roundHistory || []).map((round) => {
+          let roundChanged = false;
+          const nextMatches = round.matches.map((match) => {
+            if (!match.playerSnapshots) return match;
+            let snapChanged = false;
+            const nextSnaps = { ...match.playerSnapshots };
+            Object.keys(nextSnaps).forEach((pid) => {
+              const snap = nextSnaps[pid];
+              if (
+                snap.name.trim().toLowerCase() === oldMember.name.trim().toLowerCase() &&
+                snap.gender === oldMember.gender &&
+                snap.tier === oldMember.tier
+              ) {
+                nextSnaps[pid] = {
+                  ...snap,
+                  name: updatedMember.name,
+                  gender: updatedMember.gender,
+                  tier: updatedMember.tier,
+                };
+                snapChanged = true;
+              }
+            });
+            if (snapChanged) {
+              roundChanged = true;
+              return { ...match, playerSnapshots: nextSnaps };
+            }
+            return match;
+          });
+          if (roundChanged) {
+            recChanged = true;
+            return { ...round, matches: nextMatches };
+          }
+          return round;
+        });
+
+        if (recChanged) {
+          workoutMapChanged = true;
+          nextWorkoutMap[dateKey] = {
+            ...rec,
+            players: nextRecPlayers,
+            archivedPlayers: nextRecArchived,
+            roundHistory: nextRecHistory,
+          };
+        }
+      });
+
+      if (workoutMapChanged) {
+        const savedMap = saveWorkoutRecords(nextWorkoutMap);
+        setWorkoutRecords(savedMap);
       }
     },
     []
@@ -1116,9 +1304,12 @@ export default function App() {
       let changed = false;
       const next = prev.map((m) => {
         const nextTitle = computeUpdatedMatchTitle(m.teamA, m.teamB, m.title);
-        if (nextTitle !== m.title) {
+        const finalTitle = m.isSpecialMatch && nextTitle && !nextTitle.startsWith('스페셜')
+          ? `스페셜 ${nextTitle}`
+          : nextTitle;
+        if (finalTitle !== m.title) {
           changed = true;
-          return { ...m, title: nextTitle };
+          return { ...m, title: finalTitle };
         }
         return m;
       });
@@ -1248,10 +1439,11 @@ export default function App() {
         const inActive = activePlayingIds.has(p.id);
         const inQueue = queuedMatches.some(
           (m) =>
-            m.teamA.player1Id === p.id ||
-            m.teamA.player2Id === p.id ||
-            m.teamB.player1Id === p.id ||
-            m.teamB.player2Id === p.id
+            !m.isSpecialMatch &&
+            (m.teamA.player1Id === p.id ||
+              m.teamA.player2Id === p.id ||
+              m.teamB.player1Id === p.id ||
+              m.teamB.player2Id === p.id)
         );
         if (inActive || inQueue) return false;
       }
@@ -1333,8 +1525,14 @@ export default function App() {
     } else if (nextCone.color === 'red' && autoDeploy) {
       // Switched to Our Club: If queue has matches, automatically pull the next queued team!
       setQueuedMatches((prevQueue) => {
-        if (prevQueue.length > 0) {
-          const [matchToDeploy, ...remainingQueue] = prevQueue;
+        const deployableIdx = prevQueue.findIndex(
+          (m) =>
+            !m.isSpecialMatch ||
+            isSpecialMatchTurnReady(m, players, activeMatches, prevQueue, getEnrichedOptions(options))
+        );
+        if (deployableIdx >= 0) {
+          const matchToDeploy = prevQueue[deployableIdx];
+          const remainingQueue = prevQueue.filter((_, i) => i !== deployableIdx);
           const now = Date.now();
           const assignedMatch: CourtMatch = {
             ...matchToDeploy,
@@ -1357,7 +1555,12 @@ export default function App() {
 
           setConflictMatchTargetCourts({});
           soundEffects.playWhistle();
-          return remainingQueue;
+          return orderQueuedMatchesWithSpecial(
+            remainingQueue,
+            players,
+            activeMatches,
+            getEnrichedOptions(options)
+          );
         }
         return prevQueue;
       });
@@ -1743,7 +1946,14 @@ export default function App() {
           completedAt: undefined,
           winner: undefined,
         };
-        setQueuedMatches((prev) => [returnedToQueue, ...prev]);
+        setQueuedMatches((prev) =>
+          orderQueuedMatchesWithSpecial(
+            [returnedToQueue, ...prev],
+            players,
+            activeMatches.filter((m) => Number(m.courtNumber) !== cNum),
+            getEnrichedOptions(options)
+          )
+        );
         setActiveMatches((prev) => prev.filter((m) => Number(m.courtNumber) !== cNum));
       }
     }
@@ -1784,6 +1994,21 @@ export default function App() {
       mixedSessionMatches,
     };
   };
+
+  // 스페셜 게임이 대기열에 있을 때, 출전 차례 도래(오로라 표시) 시 대기열 젤 첫번째 순서(1순위)로 자동 이동시키고,
+  // 아직 차례가 되지 않은 스페셜 게임은 항상 대기열 최하단에 위치하도록 모든 상태 변화에 반응하여 정렬 유지
+  useEffect(() => {
+    if (!queuedMatches.some((m) => Boolean(m.isSpecialMatch))) return;
+    const ordered = orderQueuedMatchesWithSpecial(
+      queuedMatches,
+      players,
+      activeMatches,
+      getEnrichedOptions(options)
+    );
+    if (ordered !== queuedMatches) {
+      setQueuedMatches(ordered);
+    }
+  }, [queuedMatches, players, activeMatches, options, courts.length, allCompletedMatches.length]);
 
   // Generate Match for a Single Empty Court from Resting Players
   const handleGenerateForCourt = (courtNumber: number, pregeneratedMatch?: CourtMatch) => {
@@ -1933,7 +2158,14 @@ export default function App() {
           completedAt: undefined,
           winner: undefined,
         };
-        setQueuedMatches((prev) => [returnedToQueue, ...prev]);
+        setQueuedMatches((prev) =>
+          orderQueuedMatchesWithSpecial(
+            [returnedToQueue, ...prev],
+            players,
+            activeMatches.filter((m) => Number(m.courtNumber) !== cNum),
+            getEnrichedOptions(options)
+          )
+        );
         setActiveMatches((prev) => prev.filter((m) => Number(m.courtNumber) !== cNum));
         if (selectedSwap?.matchId === currentActive.id) {
           setSelectedSwap(null);
@@ -1986,7 +2218,14 @@ export default function App() {
           completedAt: undefined,
           winner: undefined,
         };
-        setQueuedMatches((prev) => [returnedToQueue, ...prev]);
+        setQueuedMatches((prev) =>
+          orderQueuedMatchesWithSpecial(
+            [returnedToQueue, ...prev],
+            players,
+            activeMatches.filter((m) => Number(m.courtNumber) !== cNum),
+            getEnrichedOptions(options)
+          )
+        );
         setActiveMatches((prev) =>
           prev.filter((m) => Number(m.courtNumber) !== cNum)
         );
@@ -2016,7 +2255,14 @@ export default function App() {
         completedAt: undefined,
         winner: undefined,
       };
-      setQueuedMatches((prev) => [returnedToQueue, ...prev]);
+      setQueuedMatches((prev) =>
+        orderQueuedMatchesWithSpecial(
+          [returnedToQueue, ...prev],
+          players,
+          activeMatches,
+          getEnrichedOptions(options)
+        )
+      );
       if (selectedSwap?.matchId === currentActive.id) {
         setSelectedSwap(null);
       }
@@ -2244,7 +2490,14 @@ export default function App() {
         activeMatches
       );
 
-      setQueuedMatches((prev) => [...prev, ...newMatches]);
+      setQueuedMatches((prev) =>
+        orderQueuedMatchesWithSpecial(
+          [...prev, ...newMatches],
+          players,
+          activeMatches,
+          getEnrichedOptions(options)
+        )
+      );
       setActiveTab('games');
       soundEffects.playWhistle();
     } catch (err: unknown) {
@@ -2275,6 +2528,20 @@ export default function App() {
 
     const matchToSend = queuedMatches.find((m) => m.id === matchId);
     if (!matchToSend) return 'invalid';
+
+    if (
+      matchToSend.isSpecialMatch &&
+      !isSpecialMatchTurnReady(
+        matchToSend,
+        players,
+        activeMatches,
+        queuedMatches,
+        getEnrichedOptions(options)
+      )
+    ) {
+      soundEffects.playScorePoint();
+      return 'invalid';
+    }
 
     const sendNow = Date.now();
     const displayCourtName = formatCourtName(extractCourtNumberLabel(targetCourt?.name, cNum));
@@ -2526,7 +2793,9 @@ export default function App() {
     const list = [...queuedMatches];
     const [moved] = list.splice(index, 1);
     list.splice(targetIndex, 0, moved);
-    setQueuedMatches(list);
+    setQueuedMatches(
+      orderQueuedMatchesWithSpecial(list, players, activeMatches, getEnrichedOptions(options))
+    );
   };
 
   // Helper to reconcile player offsets and consecutive rest states after manual interventions
@@ -3060,7 +3329,12 @@ export default function App() {
         activeMatches
       );
       if (newMatches.length > 0) {
-        const nextQueued = [...queuedMatches, ...newMatches];
+        const nextQueued = orderQueuedMatchesWithSpecial(
+          [...queuedMatches, ...newMatches],
+          players,
+          activeMatches,
+          getEnrichedOptions(options)
+        );
         const assignedIds = new Set<string>(selectedPlayerIds);
         newMatches.forEach((m) => {
           assignedIds.add(m.teamA.player1Id);
@@ -3074,6 +3348,31 @@ export default function App() {
       }
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : '대기 경기 생성에 실패했습니다.';
+      setAppAlertMessage(message);
+    }
+  };
+
+  // Generate a Special Game with 4 specifically selected players (대기열 가장 아래 고정, 배정 순서 도달 시 오로라 활성화)
+  const handleGenerateSpecialGameWithSelected = (selectedPlayerIds: string[]) => {
+    try {
+      const specialMatch = createSpecialMatchFromSelectedPlayers(
+        selectedPlayerIds,
+        players,
+        getEnrichedOptions(options),
+        activeMatches,
+        queuedMatches
+      );
+      setQueuedMatches((prev) =>
+        orderQueuedMatchesWithSpecial(
+          [...prev, specialMatch],
+          players,
+          activeMatches,
+          getEnrichedOptions(options)
+        )
+      );
+      soundEffects.playWhistle();
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : '스페셜 게임 생성에 실패했습니다.';
       setAppAlertMessage(message);
     }
   };
@@ -3804,7 +4103,12 @@ export default function App() {
         return;
       }
 
-      const nextQueued = [...queuedMatches, ...createdMatches];
+      const nextQueued = orderQueuedMatchesWithSpecial(
+        [...queuedMatches, ...createdMatches],
+        players,
+        activeMatches,
+        getEnrichedOptions(options)
+      );
       const intervenedIds = new Set<string>(selectedBenchPlayerIds);
       createdMatches.forEach((m) => {
         intervenedIds.add(m.teamA.player1Id);
@@ -3839,7 +4143,14 @@ export default function App() {
       );
 
       const added = result.queuedMatches;
-      setQueuedMatches((prev) => [...prev, ...added]);
+      setQueuedMatches((prev) =>
+        orderQueuedMatchesWithSpecial(
+          [...prev, ...added],
+          players,
+          activeMatches,
+          getEnrichedOptions(options)
+        )
+      );
       soundEffects.playWhistle();
 
       if (!stayOnCurrentTab) {
@@ -3882,7 +4193,14 @@ export default function App() {
         activeMatches
       );
 
-      setQueuedMatches((prev) => [...prev, newMatch]);
+      setQueuedMatches((prev) =>
+        orderQueuedMatchesWithSpecial(
+          [...prev, newMatch],
+          players,
+          activeMatches,
+          getEnrichedOptions(options)
+        )
+      );
       soundEffects.playWhistle();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : `${type} 경기 생성에 실패했습니다.`;
@@ -4725,6 +5043,14 @@ export default function App() {
       const now = new Date();
       const nowMs = now.getTime();
       const currentBoundaryKey = getLatestFourAmBoundaryKey(now);
+      const didCrossBoundaryLive = lastObservedBoundaryKeyRef.current !== currentBoundaryKey;
+      lastObservedBoundaryKeyRef.current = currentBoundaryKey;
+
+      const boundaryFourAmMs = getFourAmTimestampForBoundaryKey(currentBoundaryKey);
+      const isAtFourAmMinute =
+        nowMs >= boundaryFourAmMs && nowMs < boundaryFourAmMs + 60 * 1000;
+      const isLiveFourAmMoment = didCrossBoundaryLive || isAtFourAmMinute;
+
       const stashedToday = viewingWorkoutDate !== null ? loadTodayLiveStash() : null;
       const livePlayers = stashedToday ? stashedToday.players : players;
       const liveActiveMatches = stashedToday ? stashedToday.activeMatches : activeMatches;
@@ -4805,9 +5131,6 @@ export default function App() {
       if (fourAmState.modalExpiresAt !== null && fourAmState.modalExpiresAt !== undefined) {
         const remaining = Math.max(0, Math.ceil((fourAmState.modalExpiresAt - nowMs) / 1000));
         setFourAmRemainingSeconds(remaining);
-        if (!isFourAmModalOpen) {
-          setIsFourAmModalOpen(true);
-        }
 
         // 3분(180초)이 지나면 알림을 자동으로 끄고 전날 날짜(00:00시 전까지의 기록) 저장 및 전체 완전 초기화 동작
         if (remaining <= 0) {
@@ -4815,6 +5138,11 @@ export default function App() {
           const archiveDateKey =
             fourAmState.pendingArchiveDate || getArchiveDateForBoundaryKey(boundaryKey);
           executeFourAmArchiveAndFullReset(archiveDateKey, boundaryKey);
+          return;
+        }
+
+        if (!isFourAmModalOpen) {
+          setIsFourAmModalOpen(true);
         }
         return;
       }
@@ -4856,7 +5184,7 @@ export default function App() {
           options,
         };
 
-        // AM 04:00이 되면 전날 날짜(archiveDateKey)에는 00:00시 전까지의 기록만 저장
+        // 전날 날짜(archiveDateKey)에는 00:00시 전까지의 기록만 저장
         const preMidnightMap = loadPreMidnightRecords(now);
         const preMidnightCandidate =
           preMidnightMap[archiveDateKey] ||
@@ -4874,7 +5202,56 @@ export default function App() {
           setWorkoutRecords(updated);
         }
 
-        // 앱을 이용하고 있을 수 있으므로 3분간 "전체 초기화 됩니다" 확인/취소 알림 표시
+        const hasBoardData = isWorkoutSnapshotNonEmpty(sourceSnapshot);
+        const startedAfterFourAmToday = didWorkoutStartAfterFourAmBoundary(
+          sourceSnapshot,
+          currentBoundaryKey
+        );
+
+        // (A) 오전 04:00 시각이 아닌 일반 시간에 앱을 초기에 켠 경우:
+        //     알림 모달을 띄우지 않고, 전날 잔여 데이터가 남아있다면 즉시 자동 아카이브 및 전체 초기화를 조용히 완료
+        if (!isLiveFourAmMoment) {
+          if (hasBoardData && !startedAfterFourAmToday) {
+            executeFourAmArchiveAndFullReset(archiveDateKey, currentBoundaryKey);
+          } else {
+            const completedSilently: FourAmResetState = {
+              lastCompletedBoundaryKey: currentBoundaryKey,
+              pendingBoundaryKey: null,
+              pendingArchiveDate: null,
+              snoozeUntil: null,
+              modalExpiresAt: null,
+              earlyMorningBypassBoundaryKey: null,
+            };
+            setFourAmState(completedSilently);
+            saveFourAmState(completedSilently);
+            if (isFourAmModalOpen) {
+              setIsFourAmModalOpen(false);
+            }
+          }
+          return;
+        }
+
+        // (B) 오전 04:00 시각이 되었으나 초기화할 운동 데이터가 아예 없는 빈 상태이거나 이미 04:00 이후 데이터인 경우:
+        //     불필요한 알림 없이 경계 상태만 완료 처리
+        if (!hasBoardData || startedAfterFourAmToday) {
+          const completedEmpty: FourAmResetState = {
+            lastCompletedBoundaryKey: currentBoundaryKey,
+            pendingBoundaryKey: null,
+            pendingArchiveDate: null,
+            snoozeUntil: null,
+            modalExpiresAt: null,
+            earlyMorningBypassBoundaryKey: null,
+          };
+          setFourAmState(completedEmpty);
+          saveFourAmState(completedEmpty);
+          if (isFourAmModalOpen) {
+            setIsFourAmModalOpen(false);
+          }
+          return;
+        }
+
+        // (C) 앱을 켜둔 상태에서 실제로 오전 04:00 정각에 도달했고 진행/잔여 운동 기록이 있는 경우에만
+        //     3분간 "전체 초기화 됩니다" 확인/취소 알림 표시
         const triggeredState: FourAmResetState = {
           lastCompletedBoundaryKey: currentBoundaryKey,
           pendingBoundaryKey: currentBoundaryKey,
@@ -5103,7 +5480,16 @@ export default function App() {
             onSendToCourt={handleSendToCourt}
             onDeleteQueuedMatch={handleDeleteQueuedMatch}
             onMoveQueueOrder={handleMoveQueueOrder}
-            onUpdateQueuedMatches={setQueuedMatches}
+            onUpdateQueuedMatches={(next) =>
+              setQueuedMatches(
+                orderQueuedMatchesWithSpecial(
+                  next,
+                  players,
+                  activeMatches,
+                  getEnrichedOptions(options)
+                )
+              )
+            }
             onGoToCourtsTab={() => setActiveTab('courts')}
             onClearAllQueue={() => {
               setQueuedMatches([]);
@@ -5116,6 +5502,7 @@ export default function App() {
             onSwapQueuedAndBench={handleSwapQueuedAndBench}
             onSwapQueuedPlayers={handleSwapQueuedPlayers}
             onGenerateQueueWithSelected={handleGenerateQueueWithSelected}
+            onGenerateSpecialGameWithSelected={handleGenerateSpecialGameWithSelected}
             onSetPlayerSpecialStatus={handleSetPlayerSpecialStatus}
             onAdvanceCourtCone={handleAdvanceCourtCone}
             conflictPlayerIds={conflictPlayerIds}
@@ -5168,6 +5555,10 @@ export default function App() {
         activePlayersCount={activePlayersCount}
         onGenerateTestPlayers={handleGenerateTestPlayers}
         onOpenResetModal={() => setShowResetModal(true)}
+        masterMembers={masterMembers}
+        onUpdateMasterMembers={handleUpdateMasterMembers}
+        currentPlayers={players}
+        onUpdatePlayers={setPlayers}
       />
 
       {/* App Data Reset Modal */}

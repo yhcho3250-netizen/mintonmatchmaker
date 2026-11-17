@@ -92,12 +92,26 @@ export interface CourtMatch {
   completedAt?: number;
   elapsedSeconds?: number;
   title?: string; // Optional label e.g. "대기 1경기"
+  isSpecialMatch?: boolean; // 선택한 4명으로 생성된 스페셜 게임 여부 (항상 대기열 최하단 유지 및 순서 도달 시 오로라 활성화)
+  specialTargetLevel?: number; // 스페셜 게임 생성 시점의 목표 배정/진행 기준 단계 (다른 선수들이 이 단계를 넘어서면 스페셜 게임 투입 차례 도달)
   playerAssignedAt?: Record<string, number>; // playerId -> timestamp when assigned to this court
   playerSnapshots?: Record<
     string,
     { id: string; name: string; tier: Tier; gender: Gender; coneNumber?: number | string }
   >;
 }
+
+/**
+ * 스페셜 게임(isSpecialMatch === true)이 항상 대기열 가장 아래(최하단)에 위치하도록 정렬을 보장하는 헬퍼 함수
+ * 일반 대기열 경기들의 상대적 순서와 스페셜 게임들 간의 상대적 순서는 그대로 유지합니다.
+ */
+export const keepSpecialMatchesAtBottom = (matches: CourtMatch[]): CourtMatch[] => {
+  if (!matches || matches.length <= 1) return matches || [];
+  const normalMatches = matches.filter((m) => !m.isSpecialMatch);
+  const specialMatches = matches.filter((m) => Boolean(m.isSpecialMatch));
+  if (specialMatches.length === 0) return matches;
+  return [...normalMatches, ...specialMatches];
+};
 
 export interface MatchRound {
   roundNumber: number;

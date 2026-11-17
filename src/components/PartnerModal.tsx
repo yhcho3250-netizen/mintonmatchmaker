@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { Player, TIER_LABELS } from '../types';
 import {
-  HeartHandshake,
   X,
   UserPlus,
   Trash2,
@@ -20,6 +19,7 @@ import {
   PARTNER_COLOR_PALETTE,
 } from '../utils/partnerUtils';
 import { PartnerDot } from './PartnerDot';
+import { CrossedRacketsIcon } from './CrossedRacketsIcon';
 
 interface PartnerModalProps {
   isOpen: boolean;
@@ -93,7 +93,7 @@ export const PartnerModal: React.FC<PartnerModalProps> = ({
         <div className="px-4 sm:px-6 py-3.5 sm:py-4 border-b border-slate-800 flex items-center justify-between gap-2.5 bg-slate-950/60 shrink-0">
           <div className="flex items-center gap-2.5 min-w-0">
             <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-pink-500/20 to-purple-500/20 border border-pink-500/30 flex items-center justify-center text-pink-400 shrink-0">
-              <HeartHandshake className="w-4 h-4" />
+              <CrossedRacketsIcon className="w-4 h-4" />
             </div>
             <div className="min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
@@ -126,8 +126,8 @@ export const PartnerModal: React.FC<PartnerModalProps> = ({
               </div>
               <div className="flex items-center gap-1.5 text-[11px] text-slate-400">
                 <span>배정 색상:</span>
-                <HeartHandshake
-                  className="w-4 h-4 shrink-0 animate-partner-twinkle stroke-[2.2]"
+                <CrossedRacketsIcon
+                  className="w-4 h-4 shrink-0 animate-partner-twinkle"
                   style={{ color: nextColor.glow, filter: `drop-shadow(0 0 6px ${nextColor.glow})` }}
                 />
                 <span className={`font-semibold ${nextColor.text}`}>{nextColor.name}</span>
@@ -218,7 +218,7 @@ export const PartnerModal: React.FC<PartnerModalProps> = ({
                     >
                       {p1.name}
                     </span>
-                    <HeartHandshake className="w-3.5 h-3.5 text-pink-400" />
+                    <CrossedRacketsIcon className="w-3.5 h-3.5 text-pink-400" />
                     <span
                       className={`font-bold ${
                         p2.gender === 'M' ? 'text-blue-400' : 'text-pink-400'
@@ -239,7 +239,7 @@ export const PartnerModal: React.FC<PartnerModalProps> = ({
                 disabled={!selectedPlayer1Id || !selectedPlayer2Id}
                 className="px-4 py-2 bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-400 hover:to-pink-400 disabled:opacity-40 disabled:pointer-events-none text-white font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 transition-all shadow-md shadow-purple-500/20 cursor-pointer shrink-0"
               >
-                <HeartHandshake className="w-3.5 h-3.5" />
+                <CrossedRacketsIcon className="w-3.5 h-3.5" />
                 <span>파트너 연결하기</span>
               </button>
             </div>
@@ -285,7 +285,7 @@ export const PartnerModal: React.FC<PartnerModalProps> = ({
 
             {pairs.length === 0 ? (
               <div className="p-8 text-center rounded-xl border border-dashed border-slate-800 bg-slate-950/40">
-                <HeartHandshake className="w-7 h-7 text-slate-600 mx-auto mb-2" />
+                <CrossedRacketsIcon className="w-7 h-7 text-slate-600 mx-auto mb-2" />
                 <div className="text-xs font-semibold text-slate-400">
                   현재 설정된 파트너가 없습니다
                 </div>
@@ -304,10 +304,10 @@ export const PartnerModal: React.FC<PartnerModalProps> = ({
                       key={pair.pairKey}
                       className="px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 hover:border-slate-700 flex items-center justify-between gap-3 transition-colors"
                     >
-                      {/* Left: Glowing Partner Dot + Pair Num + Color name */}
+                      {/* Left: Glowing Partner Icon + Pair Num + Color name */}
                       <div className="flex items-center gap-2 shrink-0">
-                        <HeartHandshake
-                          className="w-4 h-4 shrink-0 animate-partner-twinkle stroke-[2.2]"
+                        <CrossedRacketsIcon
+                          className="w-4 h-4 shrink-0 animate-partner-twinkle"
                           style={{
                             color: pair.color.glow,
                             filter: `drop-shadow(0 0 7px ${pair.color.glow})`,
@@ -341,8 +341,8 @@ export const PartnerModal: React.FC<PartnerModalProps> = ({
                           </span>
                         </div>
 
-                        {/* Handshake connector */}
-                        <HeartHandshake className="w-3.5 h-3.5 text-pink-400 shrink-0" />
+                        {/* Crossed rackets connector */}
+                        <CrossedRacketsIcon className="w-3.5 h-3.5 text-pink-400 shrink-0" />
 
                         {/* Player 2 */}
                         <div className="flex items-center gap-1.5 min-w-0">
@@ -382,7 +382,7 @@ export const PartnerModal: React.FC<PartnerModalProps> = ({
         {/* Footer */}
         <div className="px-5 py-3 border-t border-slate-800 bg-slate-950/80 flex items-center justify-between shrink-0">
           <div className="text-[11px] text-slate-400">
-            동그라미 색상은 파트너 쌍마다 각각 다르게 표시됩니다.
+            파트너 아이콘 색상은 파트너 쌍마다 각각 다르게 표시됩니다.
           </div>
           <button
             type="button"

@@ -27,7 +27,7 @@ import {
   DoorOpen,
 } from 'lucide-react';
 import { soundEffects } from '../utils/audio';
-import { generateSingleCourtMatch } from '../utils/matchmaker';
+import { generateSingleCourtMatch, isSpecialMatchTurnReady } from '../utils/matchmaker';
 import { ConeIcon } from './ConeIcon';
 import { CourtTitleBadge } from './CourtTitleBadge';
 import { HeaderConeScroll } from './HeaderConeScroll';
@@ -173,10 +173,11 @@ export const EmptyCourtCard: React.FC<EmptyCourtCardProps> = ({
     if (p.specialStatus === 'last_match') {
       const inQueue = queuedMatches.some(
         (m) =>
-          m.teamA.player1Id === p.id ||
-          m.teamA.player2Id === p.id ||
-          m.teamB.player1Id === p.id ||
-          m.teamB.player2Id === p.id
+          !m.isSpecialMatch &&
+          (m.teamA.player1Id === p.id ||
+            m.teamA.player2Id === p.id ||
+            m.teamB.player1Id === p.id ||
+            m.teamB.player2Id === p.id)
       );
       if (inQueue) return false;
     }
@@ -250,7 +251,34 @@ export const EmptyCourtCard: React.FC<EmptyCourtCardProps> = ({
     onUpdateCones(court.courtNumber, updated, nextIdx);
   };
 
-  const nextQueuedMatch = queuedMatches[0];
+  const rosterForSpecial = useMemo(
+    () => (allPlayers.length > 0 ? allPlayers : restingPlayers).filter((p) => !p.attendancePending),
+    [allPlayers, restingPlayers]
+  );
+
+  const normalQueuedMatches = useMemo(
+    () => queuedMatches.filter((m) => !m.isSpecialMatch),
+    [queuedMatches]
+  );
+
+  const deployableQueuedMatches = useMemo(
+    () =>
+      queuedMatches.filter(
+        (m) =>
+          !m.isSpecialMatch ||
+          isSpecialMatchTurnReady(m, rosterForSpecial, activeMatches, queuedMatches, options)
+      ),
+    [queuedMatches, rosterForSpecial, activeMatches, options]
+  );
+
+  const readySpecialMatch = useMemo(
+    () => deployableQueuedMatches.find((m) => Boolean(m.isSpecialMatch)),
+    [deployableQueuedMatches]
+  );
+
+  const firstDeployableMatch = deployableQueuedMatches[0];
+  const isFirstDeployableSpecial = Boolean(firstDeployableMatch?.isSpecialMatch);
+  const nextNormalQueuedMatch = normalQueuedMatches[0];
 
   const getPlayer = (id: string) => playersMap.get(id);
 
@@ -459,7 +487,9 @@ export const EmptyCourtCard: React.FC<EmptyCourtCardProps> = ({
             경기가 배정되지 않았습니다
           </h4>
           <p className="text-xs text-slate-500 mt-0.5">
-            {nextQueuedMatch
+            {isFirstDeployableSpecial && readySpecialMatch
+              ? '스페셜 경기 투입 차례가 되었습니다!'
+              : nextNormalQueuedMatch
               ? '대기 1순위 경기가 대기 중입니다'
               : '대기 중인 경기가 없습니다'}
           </p>
@@ -477,8 +507,114 @@ export const EmptyCourtCard: React.FC<EmptyCourtCardProps> = ({
               : 'opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto'
           }`}
         >
-          {nextQueuedMatch ? (
-            /* Request 2: 대기중인 배정경기가 있을 때 -> 이 코트 경기 자동 생성 버튼은 없고, 대기 1순위 경기 배너 묶음이 중앙 위에 표시 */
+          {isFirstDeployableSpecial && readySpecialMatch ? (
+            /* 스페셜 게임이 대기열의 현재 입장할 순서(1순위)에 도달했을 때: 무지개 오로라 애니메이션 배너 + '스페셜 경기 즉시 투입' 버튼 표시 */
+            <div
+              onClick={(e) => e.stopPropagation()}
+              className={`w-full max-w-sm animate-rainbow-aurora-card rounded-xl p-3 text-left space-y-2 transition-all ${
+                isHovered || isButtonInteractable ? 'pointer-events-auto' : 'pointer-events-none'
+              }`}
+            >
+              <div className="flex items-center justify-between text-xs text-white font-extrabold">
+                <span className="flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5 text-amber-200 animate-spin" style={{ animationDuration: '5s' }} />
+                  <span>스페셜 대기 경기</span>
+                </span>
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-950/60 border border-white/30 text-amber-200 font-bold">
+                  출전 차례 도착
+                </span>
+              </div>
+
+              <div className="text-xs text-slate-300 flex items-center justify-center flex-wrap gap-1 sm:gap-1.5 py-0.5 w-full mx-auto">
+                {[
+                  getPlayer(readySpecialMatch.teamA.player1Id),
+                  getPlayer(readySpecialMatch.teamA.player2Id),
+                  getPlayer(readySpecialMatch.teamB.player1Id),
+                  getPlayer(readySpecialMatch.teamB.player2Id),
+                ].map((p, idx) => {
+                  if (!p) return null;
+                  const isLastDone = isPlayerLastMatchCompleted(p);
+                  const isLastActive = p.specialStatus === 'last_match' && !isLastDone;
+                  const isDuplicate = isPlayerActiveOnOtherCourt(p.id);
+
+                  return (
+                    <React.Fragment key={p.id || idx}>
+                      {idx > 0 && (
+                        <span className="text-white/60 text-xs font-bold shrink-0 mx-0.5">•</span>
+                      )}
+                      <span
+                        className={`px-1.5 py-0.5 rounded border text-[11px] font-bold flex items-center gap-1 transition-all shrink-0 ${
+                          isDuplicate
+                            ? 'bg-orange-950/90 border-orange-500 shadow-[0_0_10px_rgba(249,115,22,0.5)] ring-1 ring-orange-400/80 animate-pulse'
+                            : 'bg-slate-950/90 border-white/25'
+                        }`}
+                        title={
+                          isDuplicate
+                            ? `${p.name} (현재 다른 코트에 배정되어 진행 중입니다)`
+                            : p.name
+                        }
+                      >
+                        <span
+                          className={
+                            isLastDone
+                              ? 'text-slate-400'
+                              : p.gender === 'M'
+                              ? 'text-blue-400'
+                              : 'text-pink-400'
+                          }
+                        >
+                          {p.name}
+                        </span>
+                        <PartnerDot player={p} allPlayers={Array.from(playersMap.values())} size="xs" />
+                        {p.specialStatus === 'resting' && (
+                          <Coffee className="w-2.5 h-2.5 text-amber-400 animate-pulse shrink-0" />
+                        )}
+                        {p.specialStatus === 'lesson' && (
+                          <GraduationCap className="w-2.5 h-2.5 text-indigo-400 animate-pulse shrink-0" />
+                        )}
+                        {isLastActive && (
+                          <Flag className="w-2.5 h-2.5 text-rose-400 animate-pulse shrink-0" />
+                        )}
+                        {isLastDone && (
+                          <DoorOpen className="w-2.5 h-2.5 text-slate-300 shrink-0" />
+                        )}
+                      </span>
+                    </React.Fragment>
+                  );
+                })}
+              </div>
+
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (!canClickAction()) return;
+                  onAssignQueueToCourt(readySpecialMatch.id, court.courtNumber);
+                }}
+                className="w-full py-2.5 px-3 animate-rainbow-aurora-btn active:scale-98 text-white font-black text-xs rounded-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer mt-1"
+              >
+                <Play className="w-3.5 h-3.5 fill-current" />
+                <span>스페셜 경기 즉시 투입</span>
+              </button>
+
+              {onOpenAssignQueueModal && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (!canClickAction()) return;
+                    soundEffects.playRacketHit();
+                    onOpenAssignQueueModal(court.courtNumber);
+                  }}
+                  className="w-full py-1.5 px-3 bg-slate-950/90 hover:bg-slate-900 border border-white/25 hover:border-amber-400/60 text-amber-200 font-semibold text-xs rounded-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  <Clock className="w-3.5 h-3.5 text-amber-300" />
+                  <span>배정선수관리 (대기 1~5번 경기 선택)</span>
+                </button>
+              )}
+            </div>
+          ) : nextNormalQueuedMatch ? (
+            /* 일반 대기 1순위 경기가 있을 때 */
             <div
               onClick={(e) => e.stopPropagation()}
               className={`w-full max-w-sm bg-slate-900 border border-amber-500/40 rounded-xl p-3 text-left space-y-2 shadow-2xl transition-all ${
@@ -491,16 +627,16 @@ export const EmptyCourtCard: React.FC<EmptyCourtCardProps> = ({
                   대기 1순위 경기
                 </span>
                 <span className="text-[10px] text-slate-400">
-                  총 {queuedMatches.length}경기 대기 중
+                  총 {normalQueuedMatches.length}경기 대기 중
                 </span>
               </div>
 
               <div className="text-xs text-slate-300 flex items-center justify-center flex-wrap gap-1 sm:gap-1.5 py-0.5 w-full mx-auto">
                 {[
-                  getPlayer(nextQueuedMatch.teamA.player1Id),
-                  getPlayer(nextQueuedMatch.teamA.player2Id),
-                  getPlayer(nextQueuedMatch.teamB.player1Id),
-                  getPlayer(nextQueuedMatch.teamB.player2Id),
+                  getPlayer(nextNormalQueuedMatch.teamA.player1Id),
+                  getPlayer(nextNormalQueuedMatch.teamA.player2Id),
+                  getPlayer(nextNormalQueuedMatch.teamB.player1Id),
+                  getPlayer(nextNormalQueuedMatch.teamB.player2Id),
                 ].map((p, idx) => {
                   if (!p) return null;
                   const isLastDone = isPlayerLastMatchCompleted(p);
@@ -561,13 +697,29 @@ export const EmptyCourtCard: React.FC<EmptyCourtCardProps> = ({
                 onClick={(e) => {
                   e.stopPropagation();
                   if (!canClickAction()) return;
-                  onAssignQueueToCourt(nextQueuedMatch.id, court.courtNumber);
+                  onAssignQueueToCourt(nextNormalQueuedMatch.id, court.courtNumber);
                 }}
                 className="w-full py-2 px-3 bg-amber-400 hover:bg-amber-300 active:scale-98 text-slate-950 font-bold text-xs rounded-lg transition-all shadow-md shadow-amber-500/25 flex items-center justify-center gap-1.5 cursor-pointer mt-1"
               >
                 <Play className="w-3.5 h-3.5 fill-current" />
                 <span>이 대기 경기 즉시 투입하기</span>
               </button>
+
+              {readySpecialMatch && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (!canClickAction()) return;
+                    onAssignQueueToCourt(readySpecialMatch.id, court.courtNumber);
+                  }}
+                  className="w-full py-2 px-3 animate-rainbow-aurora-btn active:scale-98 text-white font-black text-xs rounded-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer mt-1"
+                  title="출전 순서가 도래한 스페셜 경기를 이 코트에 즉시 투입합니다"
+                >
+                  <Sparkles className="w-3.5 h-3.5 text-amber-200 animate-spin shrink-0" style={{ animationDuration: '5s' }} />
+                  <span>스페셜 경기 즉시 투입</span>
+                </button>
+              )}
 
               {onOpenAssignQueueModal && (
                 <button
@@ -586,7 +738,7 @@ export const EmptyCourtCard: React.FC<EmptyCourtCardProps> = ({
               )}
             </div>
           ) : (
-            /* Request 1: 다음 대기중인 배정이 없을 때 -> 이 코트 경기 자동 생성 버튼이 중앙 위에 표시 */
+            /* 일반 대기열이 없고 스페셜 경기도 아직 차례가 안 되었을 때: 이 코트 투입 예상 선수 (4명) + 이 코트 경기 자동 생성 그대로 진행 */
             <div
               onClick={(e) => e.stopPropagation()}
               className={`flex flex-col items-center gap-2 transition-all ${

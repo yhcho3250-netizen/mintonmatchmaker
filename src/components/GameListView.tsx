@@ -13,6 +13,7 @@ import {
   getNormalizedTurnQueue,
   advanceConeTurnQueue,
   formatConeTurnSequence,
+  keepSpecialMatchesAtBottom,
 } from '../types';
 import { soundEffects } from '../utils/audio';
 import {
@@ -20,6 +21,8 @@ import {
   computeEffectiveAssignedMap,
   isLateRegisteredPlayer,
   getPlayerRegistrationTime,
+  isSpecialMatchTurnReady,
+  orderQueuedMatchesWithSpecial,
 } from '../utils/matchmaker';
 import {
   Sparkles,
@@ -91,6 +94,7 @@ interface GameListViewProps {
     playerId2: string
   ) => void;
   onGenerateQueueWithSelected?: (selectedPlayerIds: string[]) => void;
+  onGenerateSpecialGameWithSelected?: (selectedPlayerIds: string[]) => void;
   onSetPlayerSpecialStatus?: (playerId: string, status: 'resting' | 'lesson' | 'last_match' | 'exited' | null) => void;
   onAdvanceCourtCone?: (courtNumber: number) => ConeItem | null;
   conflictPlayerIds?: string[];
@@ -156,6 +160,7 @@ export const GameListView: React.FC<GameListViewProps> = ({
   onSwapQueuedAndBench,
   onSwapQueuedPlayers,
   onGenerateQueueWithSelected,
+  onGenerateSpecialGameWithSelected,
   onSetPlayerSpecialStatus,
   onAdvanceCourtCone,
   conflictPlayerIds = [],
@@ -334,15 +339,21 @@ export const GameListView: React.FC<GameListViewProps> = ({
     const targetIndex = currentList.findIndex((m) => m.id === targetId);
     if (sourceIndex < 0 || targetIndex < 0 || sourceIndex === targetIndex) return false;
 
-    const updated = [...currentList];
-    const [movedMatch] = updated.splice(sourceIndex, 1);
-    updated.splice(targetIndex, 0, movedMatch);
+    const rawUpdated = [...currentList];
+    const [movedMatch] = rawUpdated.splice(sourceIndex, 1);
+    rawUpdated.splice(targetIndex, 0, movedMatch);
+    const rosterList =
+      allPlayers && allPlayers.length > 0 ? allPlayers : Array.from(playersMap.values());
+    const updated =
+      rosterList.length > 0
+        ? orderQueuedMatchesWithSpecial(rawUpdated, rosterList, activeMatches, options)
+        : keepSpecialMatchesAtBottom(rawUpdated);
     queuedMatchesRef.current = updated;
     if (onUpdateQueuedMatchesRef.current) {
       onUpdateQueuedMatchesRef.current(updated);
     }
     return true;
-  }, []);
+  }, [allPlayers, playersMap, activeMatches, options]);
 
   const activateMatchTouchOrLongPressDrag = useCallback((matchId: string) => {
     if (matchTouchLongPressTimerRef.current) {
@@ -983,6 +994,22 @@ export const GameListView: React.FC<GameListViewProps> = ({
     const match = queuedMatches.find((m) => m.id === matchId);
     if (!match) return;
 
+    // 스페셜 게임인데 아직 모든 선수의 배정 순서에 맞는 차례(오로라 애니메이션)가 되지 않은 경우 코트 배정 차단
+    if (match.isSpecialMatch) {
+      const rosterList =
+        allPlayers && allPlayers.length > 0 ? allPlayers : Array.from(playersMap.values());
+      if (!isSpecialMatchTurnReady(match, rosterList, activeMatches, queuedMatches, options)) {
+        soundEffects.playScorePoint();
+        setActiveAssignCourtNumber(null);
+        setWarningAlertModal({
+          title: '스페셜 게임 대기 중',
+          message:
+            '모든 선수의 배정 순서에 맞게 차례가 되어 무지개 오로라 애니메이션이 켜졌을 때 n코트 버튼으로 코트에 배정할 수 있습니다.',
+        });
+        return;
+      }
+    }
+
     // 다른클럽 꼬깔(회색)일 때 투입 금지
     if (c.isOtherClub) {
       soundEffects.playScorePoint();
@@ -1121,9 +1148,15 @@ export const GameListView: React.FC<GameListViewProps> = ({
     const targetIndex = Math.max(0, Math.min(queuedMatches.length - 1, targetRank - 1));
     if (sourceIndex === targetIndex) return;
 
-    const updated = [...queuedMatches];
-    const [movedMatch] = updated.splice(sourceIndex, 1);
-    updated.splice(targetIndex, 0, movedMatch);
+    const rawUpdated = [...queuedMatches];
+    const [movedMatch] = rawUpdated.splice(sourceIndex, 1);
+    rawUpdated.splice(targetIndex, 0, movedMatch);
+    const rosterList =
+      allPlayers && allPlayers.length > 0 ? allPlayers : Array.from(playersMap.values());
+    const updated =
+      rosterList.length > 0
+        ? orderQueuedMatchesWithSpecial(rawUpdated, rosterList, activeMatches, options)
+        : keepSpecialMatchesAtBottom(rawUpdated);
     if (onUpdateQueuedMatches) {
       onUpdateQueuedMatches(updated);
     }
@@ -2365,22 +2398,24 @@ export const GameListView: React.FC<GameListViewProps> = ({
               대기열에 경기가 없습니다
             </div>
             <div className="inline-flex flex-wrap items-center justify-center gap-2 mt-4">
-              <button
-                onClick={() => {
-                  if (onGenerateByArrivalOrder) {
-                    onGenerateByArrivalOrder();
-                  } else {
-                    const totalCount = Math.floor(
-                      (allPlayers && allPlayers.length > 0 ? allPlayers : restingPlayers).filter((p) => p.isActive).length / 4
-                    );
-                    onPreGenerateQuick(Math.max(1, totalCount));
-                  }
-                }}
-                className="px-4 py-2.5 bg-emerald-400 hover:bg-emerald-300 active:scale-95 text-slate-950 font-bold text-xs rounded-xl shadow-md shadow-emerald-500/20 transition-all cursor-pointer inline-flex items-center justify-center gap-1.5"
-              >
-                <Users className="w-3.5 h-3.5" />
-                <span>참가순으로 게임 생성</span>
-              </button>
+              {(!completedMatches || completedMatches.length === 0) && (
+                <button
+                  onClick={() => {
+                    if (onGenerateByArrivalOrder) {
+                      onGenerateByArrivalOrder();
+                    } else {
+                      const totalCount = Math.floor(
+                        (allPlayers && allPlayers.length > 0 ? allPlayers : restingPlayers).filter((p) => p.isActive).length / 4
+                      );
+                      onPreGenerateQuick(Math.max(1, totalCount));
+                    }
+                  }}
+                  className="px-4 py-2.5 bg-emerald-400 hover:bg-emerald-300 active:scale-95 text-slate-950 font-bold text-xs rounded-xl shadow-md shadow-emerald-500/20 transition-all cursor-pointer inline-flex items-center justify-center gap-1.5"
+                >
+                  <Users className="w-3.5 h-3.5" />
+                  <span>참가순으로 게임 생성</span>
+                </button>
+              )}
 
               {completedMatches && completedMatches.length > 0 && (
                 <button
@@ -2441,6 +2476,13 @@ export const GameListView: React.FC<GameListViewProps> = ({
                   Boolean(conflictMatchPlayers?.[match.id]?.length)) &&
                 conflictOtherCourtPlayingIds.size > 0;
 
+              const isSpecial = Boolean(match.isSpecialMatch);
+              const rosterForSpecial =
+                allPlayers && allPlayers.length > 0 ? allPlayers : Array.from(playersMap.values());
+              const isSpecialReady = isSpecial
+                ? isSpecialMatchTurnReady(match, rosterForSpecial, activeMatches, queuedMatches, options)
+                : false;
+
               return (
                 <div
                   key={match.id}
@@ -2448,13 +2490,17 @@ export const GameListView: React.FC<GameListViewProps> = ({
                   ref={(el) => {
                     queuedMatchCardRefs.current[match.id] = el;
                   }}
-                  draggable={canDrag && dragHandleActiveMatchId === match.id && !matchTouchDragActiveIdRef.current}
+                  draggable={canDrag && !isSpecial && dragHandleActiveMatchId === match.id && !matchTouchDragActiveIdRef.current}
                   onDragStart={(e) => handleMatchDragStart(e, match.id)}
                   onDragOver={(e) => handleMatchDragOver(e, match.id)}
                   onDrop={(e) => handleMatchDrop(e, match.id)}
                   onDragEnd={handleMatchDragEnd}
-                  onTouchStart={(e) => handleMatchTouchStart(e, match.id, false)}
-                  onMouseDown={(e) => handleMatchMouseDown(e, match.id, false)}
+                  onTouchStart={(e) => {
+                    if (!isSpecial) handleMatchTouchStart(e, match.id, false);
+                  }}
+                  onMouseDown={(e) => {
+                    if (!isSpecial) handleMatchMouseDown(e, match.id, false);
+                  }}
                   onContextMenu={(e) => {
                     if (canDrag) {
                       e.preventDefault();
@@ -2475,8 +2521,14 @@ export const GameListView: React.FC<GameListViewProps> = ({
                     }
                   }}
                   style={{ WebkitTouchCallout: 'none', userSelect: 'none' }}
-                  className={`px-2.5 py-2 sm:p-3 rounded-xl border transition-all flex flex-nowrap items-center justify-between gap-1.5 sm:gap-2.5 select-none touch-manipulation cursor-pointer ${
-                    activeAssignCourtNumber !== null
+                  className={`px-2.5 py-2 sm:p-3 rounded-xl border transition-all flex flex-nowrap items-center justify-between gap-1.5 sm:gap-2.5 select-none touch-manipulation ${
+                    isSpecial && !isSpecialReady && activeAssignCourtNumber !== null
+                      ? 'cursor-not-allowed opacity-75 border-slate-700/80 bg-slate-900/70'
+                      : 'cursor-pointer'
+                  } ${
+                    isSpecial && isSpecialReady
+                      ? 'animate-rainbow-aurora-card'
+                      : activeAssignCourtNumber !== null && (!isSpecial || isSpecialReady)
                       ? 'border border-emerald-400/60 bg-emerald-500/10 shadow-[0_0_10px_rgba(16,185,129,0.2)] animate-pulse'
                       : isDragging
                       ? 'border-amber-400 ring-2 ring-amber-400 bg-amber-950/60 shadow-xl scale-[1.01] z-20'
@@ -2484,37 +2536,53 @@ export const GameListView: React.FC<GameListViewProps> = ({
                       ? 'border-amber-400 ring-2 ring-amber-400 bg-slate-900 shadow-xl scale-[1.01]'
                       : matchHasSearchMatch
                       ? 'border-amber-400/90 ring-1 ring-amber-400/60 bg-slate-900/95 shadow-[0_0_15px_rgba(251,191,36,0.15)]'
+                      : isSpecial
+                      ? 'border-indigo-500/40 bg-slate-900/75 hover:border-indigo-400/60'
                       : 'border-slate-800 bg-slate-900/80 hover:border-slate-700'
                   }`}
                   title={
-                    activeAssignCourtNumber !== null
-                      ? `클릭(터치) 시 이 대기 경기를 ${
+                    isSpecial && !isSpecialReady
+                      ? '스페셜 게임 (모든 선수의 배정 순서에 맞게 차례가 되면 무지개 오로라 애니메이션이 켜지며 코트에 배정할 수 있습니다)'
+                      : activeAssignCourtNumber !== null
+                      ? `클릭(터치) 시 이 ${isSpecial ? '스페셜 ' : '대기 '}경기를 ${
                           courtList.find(
                             (c) => Number(c.courtNumber) === Number(activeAssignCourtNumber)
                           )?.label || formatCourtName(activeAssignCourtNumber)
                         }에 바로 배정합니다`
+                      : isSpecial
+                      ? '스페셜 게임 투입 가능! (n코트 버튼을 눌러 코트에 배정하세요)'
                       : '터치하거나 길게 드래그하여 순서 변경'
                   }
                 >
-                  {/* Left: Drag Handle */}
+                  {/* Left: Drag Handle or Special Badge */}
                   <div className="flex items-center gap-1 shrink-0">
-                    {canDrag && (
-                      <div
-                        title="길게 터치하거나 드래그하여 대기 경기 순서 변경"
-                        onTouchStart={(e) => {
-                          e.stopPropagation();
-                          handleMatchTouchStart(e, match.id, true);
-                        }}
-                        onMouseDown={(e) => {
-                          e.stopPropagation();
-                          handleMatchMouseDown(e, match.id, true);
-                        }}
-                        onMouseUp={() => setDragHandleActiveMatchId(null)}
-                        style={{ touchAction: 'none', WebkitTouchCallout: 'none', userSelect: 'none' }}
-                        className="cursor-grab active:cursor-grabbing p-1 sm:p-1.5 -ml-1 text-slate-500 hover:text-amber-400 active:text-amber-300 transition-colors shrink-0"
-                      >
-                        <GripVertical className="w-4 h-4" />
-                      </div>
+                    {isSpecial ? (
+                      <span className="p-1 sm:p-1.5 -ml-1 flex items-center justify-center shrink-0">
+                        <Sparkles
+                          className={`w-4 h-4 shrink-0 ${
+                            isSpecialReady ? 'text-amber-300 animate-spin' : 'text-indigo-400'
+                          }`}
+                        />
+                      </span>
+                    ) : (
+                      canDrag && (
+                        <div
+                          title="길게 터치하거나 드래그하여 대기 경기 순서 변경"
+                          onTouchStart={(e) => {
+                            e.stopPropagation();
+                            handleMatchTouchStart(e, match.id, true);
+                          }}
+                          onMouseDown={(e) => {
+                            e.stopPropagation();
+                            handleMatchMouseDown(e, match.id, true);
+                          }}
+                          onMouseUp={() => setDragHandleActiveMatchId(null)}
+                          style={{ touchAction: 'none', WebkitTouchCallout: 'none', userSelect: 'none' }}
+                          className="cursor-grab active:cursor-grabbing p-1 sm:p-1.5 -ml-1 text-slate-500 hover:text-amber-400 active:text-amber-300 transition-colors shrink-0"
+                        >
+                          <GripVertical className="w-4 h-4" />
+                        </div>
+                      )
                     )}
                   </div>
 
@@ -2599,7 +2667,7 @@ export const GameListView: React.FC<GameListViewProps> = ({
               </div>
             </div>
 
-            <div className="w-full flex items-center">
+            <div className="w-full flex flex-col gap-1.5">
               <button
                 type="button"
                 data-participant-generate-btn="true"
@@ -2608,11 +2676,27 @@ export const GameListView: React.FC<GameListViewProps> = ({
                   onGenerateQueueWithSelected?.(selectedParticipantIds);
                   setSelectedParticipantIds([]);
                 }}
-                className="w-full px-3.5 py-1 text-xs font-bold text-slate-950 bg-emerald-400 hover:bg-emerald-300 active:scale-98 rounded-lg shadow-md shadow-emerald-500/20 transition-all flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap"
+                className="w-full h-7 px-3.5 py-1 text-xs font-bold text-slate-950 bg-emerald-400 hover:bg-emerald-300 active:scale-98 rounded-lg shadow-md shadow-emerald-500/20 transition-all flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap"
               >
                 <Sparkles className="w-3.5 h-3.5 shrink-0" />
                 <span>선택한 {selectedParticipantIds.length}명으로 대기열 생성</span>
               </button>
+
+              {selectedParticipantIds.length === 4 && (
+                <button
+                  type="button"
+                  data-participant-generate-btn="true"
+                  onClick={() => {
+                    soundEffects.playWhistle();
+                    onGenerateSpecialGameWithSelected?.(selectedParticipantIds);
+                    setSelectedParticipantIds([]);
+                  }}
+                  className="w-full h-7 px-3.5 py-1 text-xs font-bold rounded-lg shadow-md transition-all flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap active:scale-98 animate-rainbow-aurora-btn"
+                >
+                  <Sparkles className="w-3.5 h-3.5 shrink-0" />
+                  <span>선택한 4명으로 스페셜 게임 생성</span>
+                </button>
+              )}
             </div>
           </div>
         )}

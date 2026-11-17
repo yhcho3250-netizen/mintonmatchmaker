@@ -20,6 +20,7 @@ import {
   DEVICE_STORAGE_KEYS,
   getDeviceStorageItem,
   setDeviceStorageItem,
+  subscribeDeviceStorageHydration,
 } from '../utils/deviceStorage';
 
 export interface BulkAddPlayerEntry {
@@ -462,6 +463,16 @@ export const BulkRegisterModal: React.FC<BulkRegisterModalProps> = ({
     const saved = getDeviceStorageItem(DEVICE_STORAGE_KEYS.BULK_ATTENDANCE_CHECK_ENABLED);
     return saved !== null ? saved === 'true' : true;
   });
+
+  useEffect(() => {
+    return subscribeDeviceStorageHydration((restored) => {
+      if (DEVICE_STORAGE_KEYS.BULK_ATTENDANCE_CHECK_ENABLED in restored) {
+        setIsAttendanceCheckEnabled(
+          restored[DEVICE_STORAGE_KEYS.BULK_ATTENDANCE_CHECK_ENABLED] === 'true'
+        );
+      }
+    });
+  }, []);
 
   const handleToggleAttendanceCheck = (checked: boolean) => {
     soundEffects.playScorePoint();

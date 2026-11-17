@@ -1,7 +1,7 @@
 import React from 'react';
 import { Player } from '../types';
 import { getPartnerInfo } from '../utils/partnerUtils';
-import { HeartHandshake } from 'lucide-react';
+import { CrossedRacketsIcon } from './CrossedRacketsIcon';
 
 interface PartnerDotProps {
   player?: Player | null;
@@ -43,8 +43,8 @@ export const PartnerDot: React.FC<PartnerDotProps> = ({
       className={`inline-flex items-center gap-1 shrink-0 select-none ${className}`}
       title={`파트너: ${info.partner.name} (${info.color.name} / 같은 코트 우선 배정)`}
     >
-      <HeartHandshake
-        className={`${iconSize} shrink-0 animate-partner-twinkle stroke-[2.2]`}
+      <CrossedRacketsIcon
+        className={`${iconSize} shrink-0 animate-partner-twinkle`}
         style={{
           color: info.color.glow,
           filter: `drop-shadow(0 0 5px ${info.color.glow})`,

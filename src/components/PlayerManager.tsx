@@ -22,7 +22,6 @@ import {
   ChevronDown,
   Edit2,
   GripVertical,
-  HeartHandshake,
   ListPlus,
   FlaskConical,
   Coffee,
@@ -32,6 +31,7 @@ import {
 } from 'lucide-react';
 import { PartnerModal } from './PartnerModal';
 import { PartnerDot } from './PartnerDot';
+import { CrossedRacketsIcon } from './CrossedRacketsIcon';
 import { MasterMemberModal } from './MasterMemberModal';
 import { MemberSelectModal } from './MemberSelectModal';
 import { ConeNumberPromptModal } from './ConeNumberPromptModal';
@@ -57,6 +57,7 @@ import {
   DEVICE_STORAGE_KEYS,
   getDeviceStorageItem,
   setDeviceStorageItem,
+  subscribeDeviceStorageHydration,
 } from '../utils/deviceStorage';
 
 interface PlayerManagerProps {
@@ -132,6 +133,24 @@ export const PlayerManager: React.FC<PlayerManagerProps> = ({
     const saved = getDeviceStorageItem(DEVICE_STORAGE_KEYS.CONE_CHECK_ENABLED);
     return saved !== null ? saved === 'true' : true;
   });
+
+  useEffect(() => {
+    return subscribeDeviceStorageHydration((restored) => {
+      if (DEVICE_STORAGE_KEYS.CONE_CHECK_ENABLED in restored) {
+        setIsConePromptEnabled(restored[DEVICE_STORAGE_KEYS.CONE_CHECK_ENABLED] === 'true');
+      }
+      if (DEVICE_STORAGE_KEYS.MASTER_MEMBERS in restored) {
+        try {
+          const parsed = JSON.parse(restored[DEVICE_STORAGE_KEYS.MASTER_MEMBERS]);
+          if (Array.isArray(parsed)) {
+            setLocalMasterMembers(parsed);
+          }
+        } catch {
+          // ignore
+        }
+      }
+    });
+  }, []);
 
   const handleToggleConePrompt = (checked: boolean) => {
     setIsConePromptEnabled(checked);
@@ -1980,7 +1999,7 @@ export const PlayerManager: React.FC<PlayerManagerProps> = ({
             className="px-4 py-2 bg-gradient-to-r from-purple-500/20 to-pink-500/20 hover:from-purple-500/30 hover:to-pink-500/30 text-purple-200 border border-purple-500/40 font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 transition-all cursor-pointer shrink-0 shadow-sm shadow-purple-500/15 active:scale-95"
             title="두 선수를 파트너로 설정 (더 높은 확률로 같은 코트에 배정)"
           >
-            <HeartHandshake className="w-3.5 h-3.5 text-pink-400" />
+            <CrossedRacketsIcon className="w-3.5 h-3.5 text-pink-400" />
             <span>파트너</span>
             {getUniquePartnerPairs(players).length > 0 && (
               <span className="ml-0.5 px-1.5 py-0.2 rounded-full bg-purple-500/30 text-purple-200 text-[10px] font-mono font-bold">

@@ -236,14 +236,8 @@ export const Header: React.FC<HeaderProps> = ({
                       : 'text-slate-400 hover:text-slate-200'
                   }`}
                 >
-                  <Users
-                    className={`w-3.5 h-3.5 shrink-0 ${
-                      totalPlayersCount === 0 ? 'animate-empty-players-icon' : ''
-                    }`}
-                  />
-                  <span className={totalPlayersCount === 0 ? 'animate-empty-players-text font-bold' : ''}>
-                    참가자 명단
-                  </span>
+                  <Users className="w-3.5 h-3.5 shrink-0" />
+                  <span>참가자 명단</span>
                   <span className="ml-0.5 text-[10px] tabular-nums font-mono px-1.5 py-0.2 bg-slate-800 text-slate-300 rounded">
                     {totalPlayersCount}
                   </span>
@@ -388,20 +382,12 @@ export const Header: React.FC<HeaderProps> = ({
             <span className="absolute top-0 left-1/2 -translate-x-1/2 w-10 sm:w-14 h-0.5 bg-emerald-400 rounded-b-full" />
           )}
           <div className="relative">
-            <Users
-              className={`w-5 h-5 sm:w-5.5 sm:h-5.5 ${
-                totalPlayersCount === 0 ? 'animate-empty-players-icon' : ''
-              }`}
-            />
+            <Users className="w-5 h-5 sm:w-5.5 sm:h-5.5" />
             <span className="absolute -top-1 -right-3 text-[9px] font-mono font-bold text-slate-300 bg-slate-800 px-1 rounded-full border border-slate-700">
               {totalPlayersCount}
             </span>
           </div>
-          <span
-            className={`text-[11px] sm:text-xs mt-1 tracking-tight whitespace-nowrap ${
-              totalPlayersCount === 0 ? 'animate-empty-players-text font-bold' : ''
-            }`}
-          >
+          <span className="text-[11px] sm:text-xs mt-1 tracking-tight whitespace-nowrap">
             참가자 명단
           </span>
         </button>

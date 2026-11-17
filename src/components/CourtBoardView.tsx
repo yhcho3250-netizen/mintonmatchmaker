@@ -16,10 +16,12 @@ import { RestingBench } from './RestingBench';
 import { CustomNMatchModal } from './CustomNMatchModal';
 import { ArrowLeftRight, X, Plus, Clock, Scale, Shuffle, Users2, Users, SlidersHorizontal, LayoutGrid } from 'lucide-react';
 import { soundEffects } from '../utils/audio';
+import { isSpecialMatchTurnReady } from '../utils/matchmaker';
 import {
   DEVICE_STORAGE_KEYS,
   getDeviceStorageItem,
   setDeviceStorageItem,
+  subscribeDeviceStorageHydration,
 } from '../utils/deviceStorage';
 
 interface CourtBoardViewProps {
@@ -133,7 +135,12 @@ export const CourtBoardView: React.FC<CourtBoardViewProps> = ({
     ? playersMap.get(selectedSwap.playerId)
     : null;
 
-  const nextQueuedMatch = queuedMatches[0];
+  const rosterForSpecial = allPlayers.length > 0 ? allPlayers : restingPlayers;
+  const nextQueuedMatch = queuedMatches.find(
+    (m) =>
+      !m.isSpecialMatch ||
+      isSpecialMatchTurnReady(m, rosterForSpecial, activeMatches, queuedMatches, options)
+  );
   const nextQueuedTeamName = nextQueuedMatch
     ? [
         playersMap.get(nextQueuedMatch.teamA.player1Id)?.name,
@@ -157,6 +164,14 @@ export const CourtBoardView: React.FC<CourtBoardViewProps> = ({
       return true;
     }
   });
+
+  useEffect(() => {
+    return subscribeDeviceStorageHydration((restored) => {
+      if (DEVICE_STORAGE_KEYS.COURT_SCROLL_MODE in restored) {
+        setIsScrollMode(restored[DEVICE_STORAGE_KEYS.COURT_SCROLL_MODE] === 'true');
+      }
+    });
+  }, []);
 
   const handleToggleScrollMode = () => {
     setIsScrollMode((prev) => {
